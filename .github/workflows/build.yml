@@ -1,0 +1,202 @@
+name: Build and test
+
+# The tests and both installers, shared by ci.yml (every PR and push to main)
+# and release.yml (manual). The release passes `version`, which is written
+# into the checkout before building; CI leaves the code's version alone.
+# release.yml downloads the `windows-installer` and `macos-app` artifacts by
+# name, so keep those names in step.
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: Version to build (MAJOR.MINOR.PATCH); empty keeps the one in the code
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Tests (Linux)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2  # v10.3.3 (no floating major tags since v8)
+        with:
+          enable-cache: true
+          cache-dependency-glob: pyproject.toml
+      - name: Set version
+        if: inputs.version != ''
+        run: python3 tools/version.py set "${{ inputs.version }}"
+      - name: Install dependencies (CPU-only torch)
+        run: make install-cpu
+      - name: Run tests
+        run: make test
+      - name: Self-test
+        run: make self-test
+
+  windows:
+    name: Test Windows App
+    runs-on: windows-latest
+    timeout-minutes: 60
+    env:
+      # The build scripts print Cyrillic; the default console code page
+      # would turn that into UnicodeEncodeError.
+      PYTHONUTF8: "1"
+      PYTHONIOENCODING: utf-8
+      GITHUB_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+
+      - name: Cache bundled runtime
+        uses: actions/cache@v6
+        with:
+          path: packaging/windows/python-runtime
+          key: win-runtime-${{ hashFiles('pyproject.toml', 'packaging/windows/fetch-runtime.py', 'packaging/standalone_python.py') }}
+
+      - name: Set version
+        if: inputs.version != ''
+        run: python tools/version.py set "${{ inputs.version }}"
+
+      - name: Fetch bundled Python
+        run: python packaging/windows/fetch-runtime.py
+
+      - name: Install Inno Setup if missing
+        shell: pwsh
+        run: |
+          $found = (Get-Command ISCC.exe -ErrorAction SilentlyContinue) -or
+                   (Test-Path "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe") -or
+                   (Test-Path "$env:ProgramFiles\Inno Setup 6\ISCC.exe")
+          if (-not $found) { choco install innosetup --no-progress -y }
+
+      - name: Build installer
+        shell: pwsh
+        run: ./packaging/windows/build-installer.ps1
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: windows-installer
+          path: packaging/windows/output/ALumenans-Setup-*.exe
+          retention-days: 7
+          compression-level: 0
+
+      - name: Install silently
+        id: install
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem packaging/windows/output/ALumenans-Setup-*.exe | Select-Object -First 1
+          $dir = Join-Path $env:RUNNER_TEMP "ALumenans"
+          $log = Join-Path $env:RUNNER_TEMP "install.log"
+          $p = Start-Process -FilePath $installer.FullName -Wait -PassThru -ArgumentList @(
+            "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/DIR=$dir", "/LOG=$log")
+          if ($p.ExitCode -ne 0) {
+            Get-Content $log -Tail 60
+            throw "Installer exited with $($p.ExitCode)"
+          }
+          "dir=$dir" >> $env:GITHUB_OUTPUT
+
+      - name: Check the Start menu shortcut
+        shell: pwsh
+        run: |
+          $dir = "${{ steps.install.outputs.dir }}"
+          $lnk = Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs\ALumenans.lnk"
+          if (-not (Test-Path $lnk)) { throw "No shortcut at $lnk" }
+          $s = (New-Object -ComObject WScript.Shell).CreateShortcut($lnk)
+          Write-Host "Target: $($s.TargetPath) $($s.Arguments) (in $($s.WorkingDirectory))"
+          if ($s.TargetPath -ne (Join-Path $dir "runtime\pythonw.exe")) { throw "Unexpected target" }
+          if ($s.Arguments -ne "-m alumenans") { throw "Unexpected arguments" }
+          if ($s.WorkingDirectory -ne $dir) { throw "Unexpected working directory" }
+
+      - name: Self-test the installed program
+        shell: pwsh
+        run: |
+          $dir = "${{ steps.install.outputs.dir }}"
+          Remove-Item Env:PYTHONPATH -ErrorAction SilentlyContinue
+          Set-Location $dir
+          # Console Python, for a readable report.
+          & .\runtime\python.exe -m alumenans --self-test
+          if ($LASTEXITCODE -ne 0) { throw "Self-test failed" }
+          # pythonw, exactly as the shortcut starts it: no console, no
+          # stdout. Only the exit code tells.
+          $p = Start-Process -FilePath (Join-Path $dir "runtime\pythonw.exe") -WorkingDirectory $dir `
+                 -ArgumentList "-m", "alumenans", "--self-test" -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "Self-test under pythonw exited with $($p.ExitCode)" }
+
+  macos-build:
+    name: Build macOS App (built on Windows)
+    # The Mac app is built on Windows in real life too; build it there.
+    runs-on: windows-latest
+    timeout-minutes: 60
+    env:
+      PYTHONUTF8: "1"
+      PYTHONIOENCODING: utf-8
+      GITHUB_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2  # v10.3.3 (no floating major tags since v8)
+        with:
+          # uv's own cache would duplicate the ~900 MB already kept in
+          # packaging/macos/runtime-cache (cached below).
+          enable-cache: false
+
+      - name: Cache Mac runtime and packages
+        uses: actions/cache@v6
+        with:
+          path: packaging/macos/runtime-cache
+          key: mac-runtime-${{ hashFiles('pyproject.toml', 'packaging/macos/build-mac.py', 'packaging/standalone_python.py') }}
+
+      - name: Set version
+        if: inputs.version != ''
+        run: python tools/version.py set "${{ inputs.version }}"
+
+      - name: Build
+        run: python packaging/macos/build-mac.py
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: macos-app
+          path: packaging/macos/ALumenans-*-mac.zip
+          retention-days: 7
+          compression-level: 0
+
+  macos-test:
+    name: Test macOS App
+    needs: macos-build
+    # The oldest Apple Silicon image GitHub still hosts. The app supports
+    # macOS 14 (LSMinimumSystemVersion), but `macos-14` is now Intel-only
+    # and deprecated, and the app is arm64-only.
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: macos-app
+          path: dist
+
+      - name: Unpack like Finder does
+        run: |
+          set -euo pipefail
+          zip=$(ls dist/ALumenans-*-mac.zip)
+          mkdir -p "$RUNNER_TEMP/app"
+          ditto -x -k "$zip" "$RUNNER_TEMP/app"
+          echo "APP=$RUNNER_TEMP/app/ALumenans.app" >> "$GITHUB_ENV"
+
+      - name: Check the bundle
+        run: |
+          set -euo pipefail
+          plutil -lint "$APP/Contents/Info.plist"
+          test -x "$APP/Contents/MacOS/ALumenans"
+          test -x "$APP/Contents/Resources/python/bin/python3"
+          test -f "$APP/Contents/Resources/app/alumenans/__main__.py"
+
+      - name: Self-test through the real launcher
+        run: env -u PYTHONPATH "$APP/Contents/MacOS/ALumenans" --self-test

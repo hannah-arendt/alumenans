@@ -1,0 +1,55 @@
+#!/bin/bash
+# ALumenans launcher on macOS: Contents/MacOS/ALumenans.
+#
+# Python lives inside the app together with all packages, which are
+# installed at build time. The user doesn't need to install anything, and
+# we don't touch whatever Python they already have.
+#
+# There is deliberately no separate environment (venv) here. It added state
+# that lived between launches, could go stale from an old build and was
+# invisible from outside: once, pip vanished because of it. Now there is
+# nothing left to install, and Python keeps no state between launches.
+#
+# Variable names are in Latin letters: to bash, a Cyrillic variable name
+# isn't a name but a command.
+
+set -u
+
+resources="$(cd "$(dirname "$0")/../Resources" && pwd)"
+app="$resources/app"
+program="$app/alumenans/__main__.py"
+python="$resources/python/bin/python3"
+
+# Dialog language: the one chosen in the program, otherwise the system's.
+lang="$(cat "$app/.ui-language" 2>/dev/null)"
+if [ -z "$lang" ]; then
+  case "$(/usr/bin/defaults read -g AppleLanguages 2>/dev/null | sed -n '2p' | tr -d ' ",')" in
+    ru*) lang=ru ;;
+    *) lang=en ;;
+  esac
+fi
+if [ "$lang" = ru ]; then
+  ok_button="Понятно"
+  no_package="Внутри приложения нет пакета alumenans — сборка неполная."
+  no_python="Внутри приложения нет Python — сборка неполная."
+else
+  ok_button="OK"
+  no_package="The alumenans package is missing inside the app — the build is incomplete."
+  no_python="Python is missing inside the app — the build is incomplete."
+fi
+
+tell() {
+  /usr/bin/osascript -e "display dialog \"$1\" buttons {\"$ok_button\"} \
+    default button 1 with title \"ALumenans\" with icon caution" >/dev/null 2>&1
+  exit 1
+}
+
+[ -f "$program" ] || tell "$no_package"
+[ -x "$python" ]  || tell "$no_python"
+
+# PYTHONPATH, so that child processes (python -m alumenans…) find the
+# package whichever folder they are started from.
+export PYTHONPATH="$app${PYTHONPATH:+:$PYTHONPATH}"
+
+cd "$app" || exit 1
+exec "$python" -m alumenans "$@"

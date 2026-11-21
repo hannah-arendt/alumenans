@@ -1,0 +1,37 @@
+ALumenans on the Mac
+
+
+INSTALLATION
+
+You need macOS 14 (Sonoma) or newer and a Mac with Apple Silicon (M1 or newer).
+
+1. Unpack the archive by double-clicking it.
+2. Drag ALumenans into the Applications folder.
+
+FIRST LAUNCH
+
+The Mac will refuse to open it and say that Apple could not check the program for malicious software.
+
+What to do:
+
+1. In the warning window, click "Done".
+2. Open System Settings → Privacy & Security.
+3. Scroll down to the Security section. There will be a line about ALumenans and an "Open Anyway" button. Click it.
+4. Confirm with your password or fingerprint, then click "Open" once more.
+
+
+WHAT HAPPENS ON FIRST LAUNCH
+
+The program downloads the speech recognition models — about half a gigabyte. Everything else is already inside. This happens once, in a window with a progress bar, and takes ten to twenty minutes depending on your internet connection. After that it works entirely offline.
+
+Everything downloaded is stored in
+    ~/Library/Application Support/ALumenans
+If you ever want to remove the program completely, delete it from Applications and delete this folder.
+
+INTERFACE LANGUAGE
+
+The program follows the system language (Russian or English) on first launch. You can switch it at any time in the top right corner of the program window. The language of the recordings is separate: the program transcribes Russian-language interviews.
+
+WHAT THE PROGRAM DOES WITH YOUR DATA
+
+It sends nothing. The audio recording, the transcript and everything you edit stay on your computer. The internet is needed exactly once — at installation, to download speech recognition.

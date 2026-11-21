@@ -1,0 +1,72 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "alumenans"
+# The version is defined in packaging/windows/ALumenans.iss; tests/test_packaging.py
+# makes sure the same one is here and in alumenans/__init__.py.
+version = "0.1.0"
+description = "Local transcription, proofreading and anonymization of Russian-language interviews"
+readme = "README.md"
+license = "GPL-3.0-or-later"
+license-files = ["LICENSE", "THIRD-PARTY-NOTICES.md"]
+# The installer and the Mac app both ship Python 3.13.
+requires-python = ">=3.13"
+# Exact versions: the program ships to people together with these packages,
+# and only this exact combination has been tested.
+dependencies = [
+    "natasha==1.6.0",
+    "pymorphy3==2.0.6",
+    "gliner==0.2.27",
+    "pywebview==6.2.1",
+    "torch==2.13.0",
+    "transformers==5.6.2",
+    "huggingface-hub==1.24.0",
+    "tokenizers==0.22.2",
+    "onnxruntime==1.27.0",
+    "numpy==2.5.1",
+    "onnx-asr[cpu,hub]==0.12.0",
+    "sherpa-onnx==1.13.4",
+    "sherpa-onnx-bin==1.13.4",
+    "imageio-ffmpeg==0.6.0",
+    "mutagen==1.47.0",
+    # SQLCipher: the study and interview files are encrypted SQLite.
+    "sqlcipher3==0.6.5",
+    # On the Mac the window is a WKWebView, which pywebview reaches through pyobjc.
+    "pyobjc-core==11.1; sys_platform == 'darwin'",
+    "pyobjc-framework-WebKit==11.1; sys_platform == 'darwin'",
+]
+
+[project.urls]
+Source = "https://github.com/hannah-arendt/alumenans"
+
+[project.optional-dependencies]
+dev = ["pytest"]
+
+# The app ships for Windows and macOS only. To open its window on a Linux
+# dev machine, pywebview needs a toolkit; Qt comes as plain wheels (GTK
+# would need PyGObject built against the system libraries). Same versions
+# that `pywebview[qt]==6.2.1` resolves to.
+linux-gui = [
+    "pywebview[qt]==6.2.1; sys_platform == 'linux'",
+    "PyQt6==6.12.1; sys_platform == 'linux'",
+    "PyQt6-WebEngine==6.140.1; sys_platform == 'linux'",
+    "qtpy==2.4.3; sys_platform == 'linux'",
+]
+
+[project.gui-scripts]
+alumenans = "alumenans.app:main"
+
+[project.scripts]
+alumenans-worker = "alumenans.transcription.worker:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+alumenans = ["resources/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleName</key>
+  <string>ALumenans</string>
+  <key>CFBundleDisplayName</key>
+  <string>ALumenans</string>
+  <key>CFBundleIdentifier</key>
+  <string>org.alumenans.app</string>
+  <key>CFBundleVersion</key>
+  <string>VERSION</string>
+  <key>CFBundleShortVersionString</key>
+  <string>VERSION</string>
+  <key>CFBundlePackageType</key>
+  <string>APPL</string>
+  <key>CFBundleExecutable</key>
+  <string>ALumenans</string>
+  <key>CFBundleIconFile</key>
+  <string>ALumenans.icns</string>
+  <key>LSMinimumSystemVersion</key>
+  <string>14.0</string>
+
+  <!-- The program works offline, but the window is a WKWebView, and it
+       needs the program's own local server on 127.0.0.1. The exception is
+       granted for local addresses only: the web part never goes outside. -->
+  <key>NSAppTransportSecurity</key>
+  <dict>
+    <key>NSAllowsLocalNetworking</key>
+    <true/>
+  </dict>
+
+  <!-- The person picks the recordings folder through the system dialog,
+       so there's no reason to ask for separate "all files" access. -->
+  <key>NSHighResolutionCapable</key>
+  <true/>
+  <key>LSApplicationCategoryType</key>
+  <string>public.app-category.productivity</string>
+</dict>
+</plist>

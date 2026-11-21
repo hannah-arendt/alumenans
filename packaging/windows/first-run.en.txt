@@ -1,0 +1,32 @@
+ALumenans is installed for the current user only and does not change the system Python.
+
+All required libraries are already included in the installer. On first launch an internet connection is needed only so that the program can:
+
+1. Download the transcription and anonymization models.
+2. Open its main window once preparation has finished.
+
+Please do not close the "Getting the program ready" window. The first preparation may take a long time and needs several gigabytes of free space. On later launches the downloaded components are used from disk.
+
+Audio recordings, transcripts, guides and notes are processed locally and are not sent to the developers.
+
+The interface language chosen for this installer becomes the program's language. It can be changed at any time in the top right corner of the program window. The language of the recordings is separate: the program transcribes Russian-language interviews.
+
+What's new in version 0.2.0
+
+Proofreading with sound. The recording can be played right in the proofreading tab: a whole turn, or the sentence around the word being checked. The word being heard is highlighted in the text.
+
+Work is no longer lost. A project file appears next to the recording: the transcript, proofreading edits and decisions are saved automatically and survive closing the program.
+
+Replace throughout the text. Different spellings of one name can be replaced at once. The program shows every spelling it found with its context and warns if the word is in the Russian dictionary.
+
+A word can be deleted, not only replaced: the program removes the extra space and any dangling punctuation by itself.
+
+Guide coverage. If you attach the interview guide, the program shows which questions were asked and where, which were skipped, what came up beyond the plan, and how long the blocks took compared with the plan. It also works out which speaker is the interviewer.
+
+The subject of the study is not anonymized. From the guide and the study programme the program suggests a list of names that are being studied and are therefore not personal data. Nothing is protected until you mark it yourself.
+
+The finished transcript is saved as a .docx document.
+
+Transcription is faster: speech recognition and speaker separation run at the same time.
+
+Speaker separation has been redone. Instead of a set of rules there is one principle: a long monologue is no longer split in the middle, and a short "uh-huh" in another voice is not lost.

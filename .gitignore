@@ -1,0 +1,28 @@
+.DS_Store
+__pycache__/
+*.pyc
+packaging/windows/output/
+packaging/windows/python-runtime/
+packaging/macos/runtime-cache/
+packaging/macos/*.zip
+
+# Python packaging
+*.egg-info/
+build/
+dist/
+.venv/
+.pytest_cache/
+
+# Program state when it runs from a source checkout (INSTALL_ROOT = src/)
+src/.*
+src/models/
+src/tools/
+startup_stack.txt
+
+*.m4a
+*.mp3
+*.wav
+*.ogg
+*.mp4
+*.docx
+*-расшифровка*.txt

@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ALumenans: нужен Python</title>
+<link rel="icon" type="image/png" href="ALumenans_logo.png">
+<style>
+:root{
+  --paper:#EDEEE9; --paper-raised:#F7F8F4; --ink:#1B1E1A; --ink-soft:#5E645C;
+  --rule:#D3D6CD; --accent:#35528A; --warn:#B93A31;
+  --serif:Cambria,"PT Serif","Times New Roman",Georgia,serif;
+  --sans:"Segoe UI","Segoe UI Variable",system-ui,sans-serif;
+}
+*{box-sizing:border-box}
+body{
+  margin:0; padding:56px 24px 80px; background:var(--paper); color:var(--ink);
+  font-family:var(--sans); font-size:16px; line-height:1.65;
+}
+.wrap{max-width:600px; margin:0 auto}
+h1{font-family:var(--serif); font-weight:400; font-size:30px; line-height:1.25; margin:0 0 14px}
+.lead{color:var(--ink-soft); margin:0 0 36px; font-size:15.5px}
+ol{margin:0; padding:0; list-style:none; counter-reset:step}
+li{
+  counter-increment:step; position:relative; padding:0 0 26px 52px;
+  border-left:1px solid var(--rule); margin-left:15px;
+}
+li:last-child{border-left-color:transparent; padding-bottom:0}
+li::before{
+  content:counter(step); position:absolute; left:-15px; top:-2px;
+  width:30px; height:30px; border-radius:50%; background:var(--ink); color:var(--paper-raised);
+  font-size:14px; font-weight:600; display:flex; align-items:center; justify-content:center;
+}
+li h2{font-size:17px; font-weight:600; margin:2px 0 6px}
+li p{margin:0; color:var(--ink-soft); font-size:15px}
+a{color:var(--accent)}
+.note{
+  margin-top:14px; padding:14px 16px; background:#fff;
+  border-left:3px solid var(--warn); font-size:15px;
+}
+.note b{color:var(--warn)}
+.check{
+  display:inline-block; margin:8px 0 0; padding:7px 12px; background:var(--paper-raised);
+  border:1px solid var(--rule); border-radius:2px;
+  font-family:Consolas,monospace; font-size:14px;
+}
+.foot{
+  margin-top:44px; padding-top:22px; border-top:1px solid var(--rule);
+  color:var(--ink-soft); font-size:14.5px;
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>Программе не хватает одной вещи</h1>
+  <p class="lead">На этом компьютере нет Python — это бесплатная программа, на которой работает расшифровщик. Установить нужно один раз, дальше она больше никогда о себе не напомнит.</p>
+
+  <ol>
+    <li>
+      <h2>Откройте сайт python.org</h2>
+      <p>Ссылка: <a href="https://www.python.org/downloads/" target="_blank" rel="noopener">python.org/downloads</a>. Большая жёлтая кнопка сверху — нажмите её, файл начнёт скачиваться.</p>
+    </li>
+
+    <li>
+      <h2>Запустите скачанный файл</h2>
+      <p>Он лежит в папке «Загрузки», называется примерно <b>python-3.x.x-amd64.exe</b>. Двойной клик.</p>
+      <div class="note">
+        <b>Самое важное.</b> На первом же экране, внизу, есть галочка <span class="check">Add python.exe to PATH</span> — поставьте её <b>до</b> того, как нажмёте кнопку установки. Без этой галочки программа Python не найдёт, и всё придётся делать заново.
+      </div>
+    </li>
+
+    <li>
+      <h2>Нажмите «Install Now» и дождитесь конца</h2>
+      <p>Появится полоска загрузки. Когда напишет «Setup was successful» — закройте окно кнопкой Close.</p>
+    </li>
+
+    <li>
+      <h2>Поставьте библиотеки программы</h2>
+      <p>Сама программа их больше не ставит: в установщике они уже внутри, а при запуске из исходников их ставят один раз вручную. Откройте командную строку в корневой папке программы (там, где лежит <b>pyproject.toml</b>) и выполните <b>pip install -e .</b> Это займёт несколько минут и потребует интернета.</p>
+    </li>
+
+    <li>
+      <h2>Запустите «run.bat» ещё раз</h2>
+      <p>Тот же двойной клик, что и в прошлый раз. Откроется окно подготовки, а затем собственное окно программы. При первом запуске программа загрузит модели распознавания, поэтому ей понадобится интернет.</p>
+    </li>
+  </ol>
+
+  <p class="foot">Если после установки всё равно не работает — скорее всего не поставилась та самая галочка на втором шаге. Запустите установщик Python ещё раз, выберите «Modify» и пройдите заново, следя за ней.</p>
+
+</div>
+</body>
+</html>

@@ -1,0 +1,140 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 912" width="800" height="912" role="img" aria-labelledby="title desc" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif">
+  <title id="title">How an interview moves through ALumenans</title>
+  <desc id="desc">An interview recording goes through Silero VAD (0.6M parameters), which finds speech. GigaAM v3 (221M) turns speech into words while 3D-Speaker ERes2Net (6.6M) tells voices apart; together they give a transcript with speaker turns. The researcher proofreads it. Natasha (under 1M) and GLiNER multi v2.1 (289M) suggest personal data, and the researcher decides each replacement. The result is an anonymized transcript and an encrypted pseudonymization key.</desc>
+
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0 0 L10 5 L0 10 z" fill="#6b7280"/>
+    </marker>
+    <style>
+      .band  { fill: #f6f7f9; }
+      .stage { font-size: 11px; font-weight: 700; letter-spacing: 1.2px; fill: #8a909c; }
+      .model { fill: #e8f0fe; stroke: #3b6fd4; stroke-width: 1.5; }
+      .human { fill: #fff3d6; stroke: #c98a10; stroke-width: 1.5; }
+      .data  { fill: #ffffff; stroke: #9aa1ad; stroke-width: 1.5; }
+      .side  { fill: #ffffff; stroke: #9aa1ad; stroke-width: 1.5; stroke-dasharray: 5 4; }
+      .out   { fill: #1f2937; stroke: #1f2937; stroke-width: 1.5; }
+      .name  { font-size: 15px; font-weight: 700; fill: #1f2937; }
+      .what  { font-size: 13px; fill: #4b5563; }
+      .label { font-size: 14px; font-weight: 600; fill: #1f2937; }
+      .light { font-size: 14px; font-weight: 600; fill: #ffffff; }
+      .note  { font-size: 12px; fill: #6b7280; }
+      .badge { fill: #ffffff; stroke: #3b6fd4; stroke-width: 1; }
+      .count { font-size: 12px; font-weight: 700; fill: #2a55ad; }
+      .flow  { fill: none; stroke: #6b7280; stroke-width: 1.5; marker-end: url(#arrow); }
+    </style>
+  </defs>
+
+  <!-- Card: keeps the diagram readable on light and dark pages alike. -->
+  <rect x="0.5" y="0.5" width="799" height="911" rx="14" fill="#ffffff" stroke="#d9dce3"/>
+
+  <!-- Stage bands -->
+  <rect class="band" x="20" y="76"  width="760" height="268" rx="10"/>
+  <rect class="band" x="20" y="356" width="760" height="100" rx="10"/>
+  <rect class="band" x="20" y="468" width="760" height="284" rx="10"/>
+  <text class="stage" x="36" y="100">TRANSCRIBE</text>
+  <text class="stage" x="36" y="380">PROOFREAD</text>
+  <text class="stage" x="36" y="492">ANONYMIZE</text>
+
+  <!-- Input -->
+  <rect class="data" x="290" y="24" width="220" height="36" rx="18"/>
+  <text class="label" x="400" y="47" text-anchor="middle">Interview recording</text>
+  <path class="flow" d="M400 60 V94"/>
+
+  <!-- Silero VAD -->
+  <rect class="model" x="250" y="96" width="300" height="60" rx="8"/>
+  <text class="name" x="266" y="122">Silero VAD</text>
+  <text class="what" x="266" y="143">finds where the speech is</text>
+  <rect class="badge" x="446" y="106" width="92" height="22" rx="11"/>
+  <text class="count" x="492" y="121" text-anchor="middle">0.6M params</text>
+
+  <path class="flow" d="M400 156 V174 H234 V190"/>
+  <path class="flow" d="M400 156 V174 H566 V190"/>
+
+  <!-- GigaAM -->
+  <rect class="model" x="84" y="192" width="300" height="60" rx="8"/>
+  <text class="name" x="100" y="218">GigaAM v3</text>
+  <text class="what" x="100" y="239">turns speech into words, with confidence</text>
+  <rect class="badge" x="280" y="202" width="92" height="22" rx="11"/>
+  <text class="count" x="326" y="217" text-anchor="middle">221M params</text>
+
+  <!-- 3D-Speaker -->
+  <rect class="model" x="416" y="192" width="300" height="60" rx="8"/>
+  <text class="name" x="432" y="218">3D-Speaker ERes2Net</text>
+  <text class="what" x="432" y="239">tells the voices apart</text>
+  <rect class="badge" x="612" y="202" width="92" height="22" rx="11"/>
+  <text class="count" x="658" y="217" text-anchor="middle">6.6M params</text>
+
+  <path class="flow" d="M234 252 V270 H400 V286"/>
+  <path class="flow" d="M566 252 V270 H400 V286"/>
+
+  <!-- Transcript -->
+  <rect class="data" x="250" y="288" width="300" height="36" rx="18"/>
+  <text class="label" x="400" y="311" text-anchor="middle">Transcript with speaker turns</text>
+
+  <rect class="side" x="600" y="288" width="160" height="36" rx="18"/>
+  <text class="label" x="680" y="311" text-anchor="middle">Interview guide</text>
+  <path class="flow" d="M600 306 H552"/>
+
+  <path class="flow" d="M400 324 V374"/>
+
+  <!-- Proofreading -->
+  <rect class="human" x="210" y="376" width="380" height="60" rx="8"/>
+  <text class="name" x="400" y="402" text-anchor="middle">Researcher proofreads</text>
+  <text class="what" x="400" y="423" text-anchor="middle">uncertain words are highlighted, with audio replay</text>
+
+  <path class="flow" d="M400 436 V486 H234 V502"/>
+  <path class="flow" d="M400 436 V486 H566 V502"/>
+
+  <!-- Natasha -->
+  <rect class="model" x="84" y="504" width="300" height="60" rx="8"/>
+  <text class="name" x="100" y="530">Natasha</text>
+  <text class="what" x="100" y="551">finds names, places and organizations</text>
+  <rect class="badge" x="280" y="514" width="92" height="22" rx="11"/>
+  <text class="count" x="326" y="529" text-anchor="middle">&lt;1M params</text>
+
+  <!-- GLiNER -->
+  <rect class="model" x="416" y="504" width="300" height="60" rx="8"/>
+  <text class="name" x="432" y="530">GLiNER multi v2.1</text>
+  <text class="what" x="432" y="551">catches what Natasha misses</text>
+  <rect class="badge" x="612" y="514" width="92" height="22" rx="11"/>
+  <text class="count" x="658" y="529" text-anchor="middle">289M params</text>
+
+  <path class="flow" d="M234 564 V582 H400 V598"/>
+  <path class="flow" d="M566 564 V582 H400 V598"/>
+
+  <!-- Suggestions -->
+  <rect class="data" x="250" y="600" width="300" height="36" rx="18"/>
+  <text class="label" x="400" y="623" text-anchor="middle">Suggested personal data</text>
+
+  <rect class="side" x="600" y="600" width="160" height="36" rx="18"/>
+  <text class="label" x="680" y="623" text-anchor="middle">Rules and dictionary</text>
+  <path class="flow" d="M600 618 H552"/>
+
+  <path class="flow" d="M400 636 V670"/>
+
+  <!-- Decision -->
+  <rect class="human" x="210" y="672" width="380" height="60" rx="8"/>
+  <text class="name" x="400" y="698" text-anchor="middle">Researcher decides each replacement</text>
+  <text class="what" x="400" y="719" text-anchor="middle">nothing is anonymized automatically</text>
+
+  <path class="flow" d="M400 732 V770 H254 V786"/>
+  <path class="flow" d="M400 732 V770 H546 V786"/>
+
+  <!-- Outputs -->
+  <rect class="out" x="134" y="788" width="240" height="36" rx="18"/>
+  <text class="light" x="254" y="811" text-anchor="middle">Anonymized transcript</text>
+  <text class="note" x="254" y="842" text-anchor="middle">safe to share</text>
+
+  <rect class="data" x="426" y="788" width="240" height="36" rx="18"/>
+  <text class="label" x="546" y="811" text-anchor="middle">Pseudonymization key</text>
+  <text class="note" x="546" y="842" text-anchor="middle">encrypted, stays with the researcher</text>
+
+  <!-- Legend -->
+  <line x1="20" y1="862" x2="780" y2="862" stroke="#e5e7eb"/>
+  <rect class="model" x="36" y="878" width="18" height="14" rx="3"/>
+  <text class="note" x="62" y="890">AI model, with its parameter count</text>
+  <rect class="human" x="286" y="878" width="18" height="14" rx="3"/>
+  <text class="note" x="312" y="890">the researcher's decision</text>
+  <text class="note" x="764" y="890" text-anchor="end">All on the researcher's laptop: CPU only, offline</text>
+</svg>

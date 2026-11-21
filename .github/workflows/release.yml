@@ -1,0 +1,145 @@
+name: Release
+
+# Started by hand (Actions → Release → Run workflow). It releases the commit
+# at the head of the branch chosen in "Use workflow from":
+#
+# 1. picks the version: the code's version if it is newer than every
+#    release and tag, otherwise the newest one with the minor number raised
+#    (tools/version.py next);
+# 2. builds and tests both installers with that version, using the same jobs
+#    as CI (build.yml);
+# 3. commits the version on top of the released commit and pushes only the
+#    tag vX.Y.Z — main keeps its version number, the tag's source matches the
+#    binaries;
+# 4. publishes the installers and their checksums as a GitHub release.
+
+# A run's name is fixed when it starts, before the version is known, and a
+# manual run's event has no commit message. So the name carries what is known
+# then; the version and the commit title go in the summary of "Pick the
+# version" and in the job names.
+run-name: >-
+  Release from ${{ github.ref_name }}${{ inputs.draft && ' (draft)' || '' }}${{ inputs.prerelease && ' (pre-release)' || '' }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      draft:
+        description: Create the release as a draft (edit the notes, then publish)
+        type: boolean
+        default: true
+      prerelease:
+        description: Mark the release as a pre-release
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  # Two releases at once would pick the same version.
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  version:
+    name: Pick the version
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.pick.outputs.version }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Pick the next version
+        id: pick
+        run: |
+          set -euo pipefail
+          # Drafts count too: their tags don't exist yet, but they will.
+          { gh api --paginate "repos/$GH_REPO/releases" --jq '.[].tag_name'; git tag -l; } > published.txt
+          version=$(python3 tools/version.py next < published.txt)
+          if grep -qxF "v$version" published.txt; then
+            echo "::error::v$version is already released or tagged."
+            exit 1
+          fi
+          echo "Code version: $(python3 tools/version.py current); releasing $version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Summary
+        env:
+          VERSION: ${{ steps.pick.outputs.version }}
+        run: |
+          set -euo pipefail
+          {
+            echo "## Releasing v$VERSION"
+            echo
+            echo "From \`${GITHUB_REF_NAME}\` at [$(git log -1 --format=%h)]($GITHUB_SERVER_URL/$GH_REPO/commit/$GITHUB_SHA): $(git log -1 --format=%s)"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  build:
+    name: Build v${{ needs.version.outputs.version }}
+    needs: version
+    uses: ./.github/workflows/build.yml
+    with:
+      version: ${{ needs.version.outputs.version }}
+
+  publish:
+    name: Publish v${{ needs.version.outputs.version }}
+    needs: [version, build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: windows-installer
+          path: dist
+      - uses: actions/download-artifact@v8
+        with:
+          name: macos-app
+          path: dist
+
+      - name: Check the files
+        working-directory: dist
+        run: |
+          set -euo pipefail
+          ls -l
+          test -f "ALumenans-Setup-$VERSION.exe"
+          test -f "ALumenans-$VERSION-mac.zip"
+          sha256sum "ALumenans-Setup-$VERSION.exe" "ALumenans-$VERSION-mac.zip" > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Tag the version
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          python3 tools/version.py set "$VERSION"
+          # Nothing to commit when the code already had this version.
+          git diff --quiet || git commit -am "Release $VERSION"
+          git tag -a "v$VERSION" -m "ALumenans $VERSION"
+          git push origin "refs/tags/v$VERSION"
+
+      - name: Create the release
+        run: |
+          set -euo pipefail
+          flags=()
+          if [ "${{ inputs.draft }}" = "true" ]; then flags+=(--draft); fi
+          if [ "${{ inputs.prerelease }}" = "true" ]; then flags+=(--prerelease); fi
+          gh release create "v$VERSION" --verify-tag \
+            --title "ALumenans $VERSION" --generate-notes "${flags[@]}" \
+            "dist/ALumenans-Setup-$VERSION.exe" \
+            "dist/ALumenans-$VERSION-mac.zip" \
+            dist/SHA256SUMS.txt
