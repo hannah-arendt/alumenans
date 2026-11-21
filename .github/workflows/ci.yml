@@ -16,3 +16,22 @@ concurrency:
 jobs:
   build:
     uses: ./.github/workflows/build.yml
+
+  # The one check the main ruleset requires, so jobs added to build.yml are
+  # covered without touching the ruleset. always() matters: a skipped required
+  # check counts as passing, so this job must run and fail when build did not
+  # succeed (failed, cancelled or skipped). Keep the name stable; the ruleset
+  # matches it.
+  ci-passed:
+    name: CI passed
+    if: always()
+    needs: [build]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fail unless every build job succeeded
+        if: needs.build.result != 'success'
+        env:
+          BUILD_RESULT: ${{ needs.build.result }}
+        run: |
+          echo "build result: $BUILD_RESULT"
+          exit 1
