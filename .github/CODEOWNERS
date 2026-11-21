@@ -1,5 +1,4 @@
-# Changes to these paths need approval from a code owner
-# (enforced by "Require review from Code Owners" in the main ruleset).
+# Enforced by "Require review from Code Owners" in the main ruleset.
 # This file lives under .github/, so changes to it are covered too.
 
 /.github/    @aleksandarmilicevic @nadia-polikarpova
