@@ -83,7 +83,7 @@ jobs:
         with:
           name: windows-installer
           path: packaging/windows/output/ALumenans-Setup-*.exe
-          retention-days: 7
+          retention-days: 1
           compression-level: 0
 
       - name: Install silently
@@ -165,7 +165,7 @@ jobs:
         with:
           name: macos-app
           path: packaging/macos/ALumenans-*-mac.zip
-          retention-days: 7
+          retention-days: 1
           compression-level: 0
 
   macos-test:
