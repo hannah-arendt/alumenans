@@ -16,8 +16,8 @@ from http.server import ThreadingHTTPServer
 from pathlib import Path
 
 
-from alumenans import app
-from alumenans.app import parse_byte_range
+from alumenans import current_audio, server
+from alumenans.server import parse_byte_range
 
 
 class ByteRangeTests(unittest.TestCase):
@@ -51,7 +51,7 @@ class AudioEndpointTests(unittest.TestCase):
         cls.media = Path(cls.folder.name) / "запись.mp3"
         cls.payload = bytes(range(256)) * 64
         cls.media.write_bytes(cls.payload)
-        cls.server = ThreadingHTTPServer(("127.0.0.1", 0), app.Handler)
+        cls.server = ThreadingHTTPServer(("127.0.0.1", 0), server.Handler)
         cls.thread = threading.Thread(target=cls.server.serve_forever, daemon=True)
         cls.thread.start()
         cls.base = f"http://127.0.0.1:{cls.server.server_port}"
@@ -60,15 +60,15 @@ class AudioEndpointTests(unittest.TestCase):
     def tearDownClass(cls):
         cls.server.shutdown()
         cls.server.server_close()
-        app.set_current_audio(None)
+        current_audio.set_current_audio(None)
         cls.folder.cleanup()
 
     def setUp(self):
-        app.set_current_audio(self.media)
+        current_audio.set_current_audio(self.media)
 
     def request(self, headers=None, method="GET"):
         request = urllib.request.Request(
-            f"{self.base}/audio?session={app.SESSION_SECRET}",
+            f"{self.base}/audio?session={server.SESSION_SECRET}",
             headers=headers or {},
             method=method,
         )
@@ -103,7 +103,7 @@ class AudioEndpointTests(unittest.TestCase):
         self.assertEqual(body, b"")
 
     def test_nothing_is_served_when_no_recording_is_chosen(self):
-        app.set_current_audio(None)
+        current_audio.set_current_audio(None)
         status, _, _ = self.request()
         self.assertEqual(status, 404)
 
@@ -121,7 +121,7 @@ class AudioEndpointTests(unittest.TestCase):
         for path, headers in (
             ("/audio", {}),
             ("/audio?session=guess", {}),
-            ("/audio", {app.SESSION_HEADER: "guess"}),
+            ("/audio", {server.SESSION_HEADER: "guess"}),
         ):
             with self.subTest(path=path, headers=headers):
                 status, body = self.raw(path, headers)
@@ -129,7 +129,7 @@ class AudioEndpointTests(unittest.TestCase):
                 self.assertNotIn(self.payload[:64], body)
 
     def test_the_secret_also_works_as_a_header(self):
-        status, body = self.raw("/audio", {app.SESSION_HEADER: app.SESSION_SECRET})
+        status, body = self.raw("/audio", {server.SESSION_HEADER: server.SESSION_SECRET})
         self.assertEqual(status, 200)
         self.assertEqual(body, self.payload)
 
@@ -138,7 +138,7 @@ class AudioEndpointTests(unittest.TestCase):
         for host in ("evil.example:%d", "localhost:%d", "127.0.0.1"):
             with self.subTest(host=host):
                 status, _ = self.raw(
-                    f"/audio?session={app.SESSION_SECRET}",
+                    f"/audio?session={server.SESSION_SECRET}",
                     {"Host": host % self.server.server_port if "%d" in host else host},
                 )
                 self.assertEqual(status, 403)
@@ -158,8 +158,8 @@ class AudioEndpointTests(unittest.TestCase):
         self.assertIn(b"<html", body.lower())
 
     def test_choosing_a_recording_gives_a_fresh_token(self):
-        first = app.set_current_audio(self.media)
-        second = app.set_current_audio(self.media)
+        first = current_audio.set_current_audio(self.media)
+        second = current_audio.set_current_audio(self.media)
         self.assertTrue(first)
         self.assertTrue(second)
 

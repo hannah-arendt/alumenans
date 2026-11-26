@@ -131,7 +131,7 @@ class SpeakerNameTests(unittest.TestCase):
         self.assertIn("if (state.speakers.length === 1)", body("nameSpeakers"))
 
     def test_the_program_tells_the_screen_who_the_respondent_is(self):
-        app_source = (PACKAGE_DIR / "app.py").read_text(
+        app_source = (PACKAGE_DIR / "server.py").read_text(
             encoding="utf-8"
         )
         self.assertIn('"respondent": respondent_speaker(text)', app_source)

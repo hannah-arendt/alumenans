@@ -132,7 +132,8 @@ class ScreenCatalogTests(unittest.TestCase):
         self.assertIn('new URLSearchParams(location.search).get("lang")', I18N_SCRIPT)
         app_source = (PACKAGE_DIR / "app.py").read_text(encoding="utf-8")
         self.assertIn('/?lang={i18n.get_language()}', app_source)
-        self.assertIn('self.path.split("?", 1)[0] in ("/", "/index.html")', app_source)
+        server_source = (PACKAGE_DIR / "server.py").read_text(encoding="utf-8")
+        self.assertIn('self.path.split("?", 1)[0] in ("/", "/index.html")', server_source)
 
     def test_the_catalog_loads_before_the_page_script(self):
         # A classic script, so I18N, UI_LANG and tr() are globals the page shares.
@@ -242,7 +243,7 @@ class ChoiceTests(LanguageState):
 
 class ApiTests(LanguageState):
     def test_the_window_can_read_and_switch_the_language(self):
-        from alumenans.app import AppApi
+        from alumenans.api import AppApi
 
         api = AppApi(transcriber=None)
         with patch("alumenans.i18n.language_file", return_value=Path(tempfile.mkdtemp()) / ".ui-language"):

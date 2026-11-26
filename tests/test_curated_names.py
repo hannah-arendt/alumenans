@@ -13,7 +13,7 @@ import unittest
 from pathlib import Path
 
 
-from alumenans import app as A
+from alumenans.detection import curated, models, morphology
 from alumenans import proofreading as P
 
 
@@ -73,12 +73,12 @@ class DictionaryFileTests(unittest.TestCase):
 
 class CuratedIndexTests(unittest.TestCase):
     def setUp(self):
-        A.MODEL_STATE["gliner"] = "off"
+        models.MODEL_STATE["gliner"] = "off"
 
     def find(self, text):
         return [
             (text[span["start"] : span["stop"]], span["cat"])
-            for span in A.curated_spans(text)
+            for span in curated.curated_spans(text)
         ]
 
     def test_a_name_is_found_in_any_case_form(self):
@@ -127,16 +127,16 @@ class CuratedIndexTests(unittest.TestCase):
 
 class LemmaTests(unittest.TestCase):
     def test_a_known_word_is_reduced_to_its_first_form(self):
-        self.assertEqual(A.lemma_of("Земфиру"), A.lemma_of("Земфира"))
-        self.assertEqual(A.lemma_of("городе"), "город")
+        self.assertEqual(morphology.lemma_of("Земфиру"), morphology.lemma_of("Земфира"))
+        self.assertEqual(morphology.lemma_of("городе"), "город")
 
     def test_an_unknown_word_stays_itself(self):
         # A recognition mishearing isn't in the language dictionary, and there's
         # no need to invent a base form for it.
-        self.assertEqual(A.lemma_of("Морэм"), "морэм")
+        self.assertEqual(morphology.lemma_of("Морэм"), "морэм")
 
     def test_case_and_yo_do_not_matter(self):
-        self.assertEqual(A.lemma_of("КЁЛЬН"), A.lemma_of("кельн"))
+        self.assertEqual(morphology.lemma_of("КЁЛЬН"), morphology.lemma_of("кельн"))
 
 
 class DictionaryReachesAnonymiserTests(unittest.TestCase):
@@ -149,7 +149,7 @@ class DictionaryReachesAnonymiserTests(unittest.TestCase):
         self.assertTrue(entries)
         kinds = {str(item.get("kind")) for item in entries}
         self.assertTrue({"person", "organization"} & kinds)
-        self.assertTrue(A.curated_index())
+        self.assertTrue(curated.curated_index())
 
 
 if __name__ == "__main__":

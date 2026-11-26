@@ -278,7 +278,11 @@ in installed builds, add a check there.
                      progress as JSON lines on stdout, result to a file
 ```
 
-### Shell: `app.py`
+### Shell: `app.py`, `launch.py`, `server.py`, `api.py`
+
+`app.py` is the entry point; `launch.py` prepares the start (build check, model
+download, setup window); `server.py` holds the HTTP `Handler`; `api.py` holds
+`AppApi`.
 
 `main()` starts a `ThreadingHTTPServer` on 127.0.0.1 and a pywebview window
 that shows `resources/anonymizer.html`. That one HTML file holds the whole
@@ -324,7 +328,7 @@ the anonymization models (GLiNER, Natasha) load in the app.
   validation, sentence endings and turn boundaries. Most transcription
   tests target it.
 
-### Anonymization: `app.find_spans`
+### Anonymization: `detection.spans.find_spans`
 
 `find_spans` merges entity spans from several sources:
 
@@ -372,7 +376,12 @@ All of it uses SQLite and the standard library only.
 
 ```
 src/alumenans/            the package
-  app.py                  shell: HTTP server, pywebview window, AppApi, anonymization
+  app.py                  entry point: starts the server and the pywebview window
+  launch.py               build check, model download, setup window
+  server.py               HTTP Handler: the screen, audio, text analysis
+  api.py                  AppApi: what the window can ask of Python
+  current_audio.py        the recording that is open now
+  detection/              personal-data search: rules, public names, models, filters
   paths.py                install root, resources, models folder, child env
   dependencies.py         modules a build must contain
   self_test.py            --self-test checks
@@ -417,7 +426,7 @@ packaging/
   `ALUMENANS_UI_LANGUAGE`.
 - **Imports are absolute:** `from alumenans.storage.project_store import …`.
   Mock targets use the full dotted path, e.g.
-  `patch("alumenans.app.subprocess.run")`.
+  `patch("alumenans.launch.subprocess.run")`.
 - **Dependencies:**
   - Every new third-party import gets an exact pin in `pyproject.toml`.
   - If the app can't start without it, also add it to `REQUIRED_MODULES` in

@@ -7,10 +7,10 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from alumenans.app import (
+from alumenans.api import AppApi
+from alumenans.detection.filters import keep_entity_span
+from alumenans.launch import (
     is_incomplete_build,
-    AppApi,
-    keep_entity_span,
     missing_packages,
     prepare,
     prepare_launch,
@@ -113,7 +113,7 @@ class AppApiTests(unittest.TestCase):
         self.assertFalse(response["ok"])
         self.assertIsNone(self.transcriber.started)
 
-    @patch("alumenans.app._schedule_new_words_email")
+    @patch("alumenans.api._schedule_new_words_email")
     def test_new_words_are_saved_before_email_draft_opens(self, schedule):
         response = self.api.open_new_words_email(
             ["донатят", "Донатят", "краудфандинг"]
@@ -211,9 +211,9 @@ class BundledDependencyTests(unittest.TestCase):
         self.assertIn("WebKit", required_modules("darwin"))
         self.assertNotIn("WebKit", required_modules("win32"))
 
-    @patch("alumenans.app.prepare_transcriber_models", return_value=None)
-    @patch("alumenans.app.subprocess.run")
-    @patch("alumenans.app.missing_packages", return_value=["gliner"])
+    @patch("alumenans.launch.prepare_transcriber_models", return_value=None)
+    @patch("alumenans.launch.subprocess.run")
+    @patch("alumenans.launch.missing_packages", return_value=["gliner"])
     def test_prepare_never_installs_anything(self, _missing, run, models):
         answer = prepare(prepare_anonymizer=True)
         self.assertTrue(is_incomplete_build(answer), answer)
@@ -221,14 +221,17 @@ class BundledDependencyTests(unittest.TestCase):
         run.assert_not_called()
         models.assert_not_called()
 
-    @patch("alumenans.app.prepare", side_effect=AssertionError("prepare is not needed"))
-    @patch("alumenans.app.missing_packages", return_value=["torch"])
+    @patch("alumenans.launch.prepare", side_effect=AssertionError("prepare is not needed"))
+    @patch("alumenans.launch.missing_packages", return_value=["torch"])
     def test_an_incomplete_build_stops_the_launch_at_once(self, _missing, _prepare):
         answer = prepare_launch()
         self.assertTrue(is_incomplete_build(answer), answer)
 
     def test_no_pip_is_left_in_the_program(self):
-        source_text = (PACKAGE_DIR / "app.py").read_text(encoding="utf-8")
+        source_text = "".join(
+            (PACKAGE_DIR / name).read_text(encoding="utf-8")
+            for name in ("app.py", "launch.py", "api.py")
+        )
         self.assertNotIn('"-m", "pip"', source_text)
         self.assertNotIn("ALUMENANS_PACKAGES", source_text)
 
@@ -243,7 +246,7 @@ class BundledDependencyTests(unittest.TestCase):
                 path = root / relative
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.touch()
-            with patch("alumenans.app.TRANSCRIBER_MODELS", root):
+            with patch("alumenans.launch.TRANSCRIBER_MODELS", root):
                 self.assertFalse(transcriber_models_ready())
                 (
                     root

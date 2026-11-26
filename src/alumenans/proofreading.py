@@ -1077,15 +1077,13 @@ def _unquoted_name_issues(turn: dict, turn_index: int) -> list[dict]:
     vocabulary: guessing from the look of the words is not allowed here —
     «нужна помощь» more often means exactly what it says."""
 
-    from alumenans.codebook import normalize_name  # noqa: F401  (shared whitespace normalization)
-
     text = str(turn.get("text") or "")
     if not text:
         return []
     try:
-        from alumenans import app
+        from alumenans.detection.curated import curated_spans
 
-        findings = app.curated_spans(text)
+        findings = curated_spans(text)
     except Exception:
         return []
 

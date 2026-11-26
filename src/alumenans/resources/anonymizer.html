@@ -848,95 +848,6 @@ kbd{
 }
 .study-word button:hover{opacity:1}
 
-/* Coding: codes on the left, text on the right. */
-.coding-view{overflow:hidden}
-.coding-blocked{display:flex; align-items:center; justify-content:center; height:100%}
-.coding-blocked-copy{max-width:460px; padding:30px; display:flex; flex-direction:column; gap:10px}
-.coding-blocked-copy h3{margin:0; font-size:14px}
-.coding-blocked-copy p{margin:0; font-size:12.5px; line-height:1.6}
-.coding-cleanup{padding:18px 26px; border-bottom:1px solid var(--rule)}
-.coding-cleanup-copy{max-width:620px; display:flex; flex-direction:column; gap:8px}
-.coding-cleanup-copy h3{margin:0; font-size:13px}
-.coding-cleanup-copy p{margin:0; font-size:12px; line-height:1.6}
-.coding-cleanup-copy ul{margin:0; padding-left:20px; font-family:var(--mono); font-size:11.5px}
-.coding-layout{display:grid; grid-template-columns:280px 1fr; height:100%; overflow:hidden}
-.coding-codes{
-  display:flex; flex-direction:column; border-right:1px solid var(--rule);
-  overflow:hidden;
-}
-.coding-codes-head{padding:16px 18px 10px; display:flex; flex-direction:column; gap:8px}
-.coding-codes-head h3{
-  margin:0; font-size:10.5px; font-weight:700; letter-spacing:.04em;
-  text-transform:uppercase; opacity:.6;
-}
-.coding-new{display:flex; gap:6px}
-.coding-new input{
-  flex:1; font-size:12px; padding:5px 8px; background:var(--paper); color:var(--ink);
-  border:1px solid var(--rule); border-radius:4px;
-}
-.coding-new button{padding:4px 10px}
-.coding-code-list{flex:1; overflow-y:auto; padding:4px 0}
-.coding-code{
-  display:flex; align-items:center; gap:6px; padding:4px 12px 4px 10px;
-  font-size:12.5px; border-left:2px solid transparent;
-}
-.coding-code.chosen{border-left-color:currentColor; background:rgba(255,255,255,.04)}
-.coding-code-apply{
-  flex:1; text-align:left; background:none; border:none; color:inherit;
-  cursor:pointer; font-size:12.5px; padding:2px 0;
-}
-.coding-code-apply:hover{text-decoration:underline}
-.coding-code-count{font-family:var(--mono); font-size:11px; opacity:.5}
-.coding-code-menu{
-  background:none; border:none; color:inherit; opacity:.4; cursor:pointer; padding:0 4px;
-}
-.coding-code-menu:hover{opacity:1}
-.coding-code-empty{padding:10px 18px; font-size:11.5px; line-height:1.55; opacity:.6}
-.coding-hint{
-  padding:10px 18px; font-size:11.5px; line-height:1.5; opacity:.7;
-  border-top:1px solid var(--rule);
-}
-.coding-main{display:flex; flex-direction:column; overflow:hidden}
-.coding-bar{
-  display:flex; align-items:center; gap:16px; padding:12px 24px;
-  border-bottom:1px solid var(--rule); font-size:11.5px;
-}
-.coding-views{display:flex; gap:4px}
-.coding-view-tab{
-  background:none; border:1px solid transparent; color:inherit; cursor:pointer;
-  font-size:11.5px; padding:3px 10px; border-radius:4px; opacity:.65;
-}
-.coding-view-tab.active{border-color:var(--rule); opacity:1}
-.coding-dim{display:flex; align-items:center; gap:6px; opacity:.75}
-.coding-status{margin-left:auto; font-family:var(--mono); opacity:.55}
-.coding-sheet{flex:1; overflow-y:auto; padding:22px 26px 60px}
-.coding-turn{display:grid; grid-template-columns:110px 1fr; gap:16px; margin-bottom:14px}
-.coding-turn-meta{display:flex; flex-direction:column; gap:2px; font-size:11px; opacity:.55}
-.coding-time{font-family:var(--mono)}
-.coding-turn-text{font-size:13.5px; line-height:1.7}
-/* The interviewer's question is shown in full: without it the answer can't be read.
-   But there is nothing to code in it — it is our turn, not data. */
-.coding-turn.asked .coding-turn-text{opacity:.5; font-style:italic; user-select:none}
-.coding-mark{
-  background:rgba(201,162,39,.22); color:inherit; border-bottom:1px solid #C9A227;
-  cursor:pointer; padding:1px 0;
-}
-.coding-sheet.dimmed .coding-plain{opacity:.28}
-.coding-sheet.dimmed .coding-turn.asked{opacity:.35}
-.coding-quote{border-bottom:1px solid var(--rule); padding:12px 0}
-.coding-quote-head{display:flex; align-items:center; gap:10px; font-size:11px; opacity:.7}
-.coding-quote-code{font-weight:600; opacity:1}
-.coding-quote-memo, .coding-quote-drop{
-  background:none; border:none; color:inherit; cursor:pointer; opacity:.5; font-size:11px;
-}
-.coding-quote-memo{margin-left:auto}
-.coding-quote-memo:hover, .coding-quote-drop:hover{opacity:1}
-.coding-quote blockquote{margin:6px 0 0; font-size:13px; line-height:1.65}
-.coding-quote-note{margin-top:6px; font-size:11.5px; opacity:.7}
-#memoText{
-  font-size:12px; padding:6px 8px; background:var(--paper); color:var(--ink);
-  border:1px solid var(--rule); border-radius:4px; resize:vertical; font-family:inherit;
-}
 .key-list{overflow-y:auto; padding:4px 0; flex:1}
 .key-item{
   display:flex; gap:12px; padding:8px 22px; font-family:var(--mono); font-size:11.5px;
@@ -998,10 +909,6 @@ kbd{
     <button class="mode-tab active" id="tabTranscriber" role="tab" aria-selected="true" data-i18n="tab.transcriber"></button>
     <button class="mode-tab" id="tabProofreading" role="tab" aria-selected="false" disabled data-i18n="tab.proofreading"></button>
     <button class="mode-tab" id="tabAnonymizer" role="tab" aria-selected="false" data-i18n="tab.anonymizer"></button>
-    <!-- Coding has moved to Radicans: it is collaborative by nature, while
-         the work here is solitary and offline. The tab is hidden; the coding
-         code stays in the program until Radicans is up and running. -->
-    <button class="mode-tab" id="tabCoding" role="tab" aria-selected="false" hidden data-i18n="tab.coding"></button>
   </div>
   <div class="bar-spacer"></div>
   <select class="ui-language" id="uiLanguage" data-i18n-aria-label="app.language"
@@ -1320,56 +1227,7 @@ kbd{
   </div>
 </section>
 
-<section class="workspace coding-view" id="codingView" hidden>
-  <div class="coding-blocked" id="codingBlocked" hidden></div>
-  <div class="coding-cleanup" id="codingCleanup" hidden></div>
-  <div class="coding-layout" id="codingLayout" hidden>
-
-    <aside class="coding-codes">
-      <div class="coding-codes-head">
-        <h3 data-i18n="coding.codebook"></h3>
-        <div class="coding-new">
-          <input type="text" id="codeName" data-i18n-placeholder="coding.new_code"
-                 autocomplete="off" spellcheck="false">
-          <button type="button" id="btnAddCode">+</button>
-        </div>
-      </div>
-      <div class="coding-code-list" id="codeList"></div>
-      <div class="coding-hint" id="codingHint" data-i18n="coding.hint"></div>
-    </aside>
-
-    <div class="coding-main">
-      <div class="coding-bar">
-        <div class="coding-views" role="tablist" data-i18n-aria-label="coding.views">
-          <button class="coding-view-tab active" data-look="document" data-i18n="coding.view.document"></button>
-          <button class="coding-view-tab" data-look="quotes" data-i18n="coding.view.quotes"></button>
-          <button class="coding-view-tab" data-look="code" data-i18n="coding.view.code"></button>
-        </div>
-        <label class="coding-dim">
-          <input type="checkbox" id="codingDim"> <span data-i18n="coding.dim"></span>
-        </label>
-        <span class="coding-status" id="codingStatus"></span>
-      </div>
-      <div class="coding-sheet" id="codingSheet"></div>
-    </div>
-
-  </div>
-</section>
-
 <div id="anonMenu" class="anon-menu" hidden></div>
-
-<dialog id="codingMemo" class="pass-dialog">
-  <form method="dialog">
-    <h3 data-i18n="coding.memo_title"></h3>
-    <p class="pass-note" id="memoQuote"></p>
-    <textarea id="memoText" rows="4"
-              data-i18n-placeholder="coding.memo_placeholder"></textarea>
-    <div class="pass-buttons">
-      <button value="cancel" data-i18n="common.cancel"></button>
-      <button value="ok" id="memoOk" data-i18n="common.save"></button>
-    </div>
-  </form>
-</dialog>
 
 <dialog id="keyPassword" class="pass-dialog">
   <form method="dialog">
@@ -2378,22 +2236,15 @@ function switchMode(mode){
   const transcriber = mode === "transcriber";
   const proofreading = mode === "proofreading";
   const anonymizer = mode === "anonymizer";
-  const coding = mode === "coding";
   $("transcriberView").hidden = !transcriber;
   $("proofreadingView").hidden = !proofreading;
   $("anonymizerView").hidden = !anonymizer;
-  $("codingView").hidden = !coding;
   $("tabTranscriber").classList.toggle("active", transcriber);
   $("tabProofreading").classList.toggle("active", proofreading);
   $("tabAnonymizer").classList.toggle("active", anonymizer);
-  $("tabCoding").classList.toggle("active", coding);
   $("tabTranscriber").setAttribute("aria-selected", String(transcriber));
   $("tabProofreading").setAttribute("aria-selected", String(proofreading));
   $("tabAnonymizer").setAttribute("aria-selected", String(anonymizer));
-  $("tabCoding").setAttribute("aria-selected", String(coding));
-  // The anonymisation state may have changed a minute ago — we ask
-  // every time rather than remember the answer.
-  if (coding) void loadCoding();
   if (proofreading){
     attachProofAudio(
       TRANSCRIBER.media ? TRANSCRIBER.media.audio_token : "",
@@ -2510,7 +2361,6 @@ function renderTranscriber(){
   $("speakerCount").disabled = active;
   $("tabProofreading").disabled = active || (!result && !PROOF.turns.length);
   $("tabAnonymizer").disabled = active;
-  $("tabCoding").disabled = active;
 
   const showProgress = ["running", "cancelling", "cancelled", "error"].includes(status.status);
   $("transcriptionProgress").hidden = !showProgress;
@@ -3311,8 +3161,8 @@ function redoProof(){
 
 /* Voice markup is done by a machine from the audio and makes predictable mistakes:
    most often it glues the end of a question to the start of an answer. Without a way
-   to fix this by hand, everything that depends on attribution — roles, guide coverage,
-   future coding — stays hostage to the machine's decision.
+   to fix this by hand, everything that depends on attribution — roles, guide coverage —
+   stays hostage to the machine's decision.
    The recording's words don't go anywhere in the process: the turn is split along with them. */
 
 function newTurnId(){
@@ -4567,7 +4417,7 @@ function applyProofBatch(){
 }
 
 /* The same text, but with a map: where each turn begins and ends in it.
-   Anonymisation needs the map — to hand coding not one solid
+   Anonymisation needs the map — to hand over not one solid
    sheet of text but turns, each with its own stable number. Building it
    in a separate pass isn't possible: turns are glued together by speaker, and any
    second assembly will diverge from the first at the very first exception. */
@@ -5168,7 +5018,6 @@ $("tabProofreading").onclick = () => {
   else prepareProofreading();
 };
 $("tabAnonymizer").onclick = openAnonymizer;
-$("tabCoding").onclick = () => switchMode("coding");
 $("btnChooseMedia").onclick = chooseMedia;
 $("btnTranscribe").onclick = startTranscription;
 $("btnCancelTranscription").onclick = async () => {
@@ -5644,7 +5493,6 @@ function rerenderForLanguage(){
     views.push(renderProofStatus, renderProofIssues, renderProofTopics, renderProofSummary,
                renderCoverage, () => { renderProofTurns(); bindTopicTitles(); });
   }
-  if (!$("codingView").hidden) views.push(renderCoding);
   for (const render of views){
     try { render(); } catch (error) { console.error(error); }
   }
@@ -5866,7 +5714,7 @@ async function saveCleanDocx(){
   markAnonymizationDone();
 }
 
-/* Coding a non-anonymised transcript is not allowed: the real names
+/* Exporting a non-anonymised transcript is not allowed: the real names
    would spread into tables and exchange files, and could never be gathered back from there.
    So the interview itself remembers whether anonymisation was completed, and how many
    findings remain unresolved: while there are any, the work isn't finished. */
@@ -5874,7 +5722,7 @@ function pendingEntities(){
   return [...state.groups.values()].filter(g => g.status === "pending").length;
 }
 
-/* Coding needs the anonymised text, laid out by turns.
+/* The export needs the anonymised text, laid out by turns.
    The replacements taken are exactly the ones that went into the file: the same inflect,
    the same decisions. Otherwise a quote would say one thing and the transcript another. */
 function anonymisedTurns(){
@@ -6097,7 +5945,7 @@ $("btnSendToTeam").onclick = async () => {
     /* The program only puts the file into the folder. It is sent by a script
        that the lead put there too: the network is not its business. */
     alert(
-      tr("export.done", {name: reply.name, turns: reply.turns, codings: reply.codings}) + "\n\n" +
+      tr("export.done", {name: reply.name, turns: reply.turns}) + "\n\n" +
       (reply.inbox
         ? tr("export.inbox")
         : tr("export.in_folder"))
@@ -6108,353 +5956,6 @@ $("btnSendToTeam").onclick = async () => {
     button.disabled = false;
   }
 };
-
-/* ======================= Coding ================================= */
-
-const CODING = {
-  allowed:false, reason:"", turns:[], moderator:null,
-  codings:[], codes:[], counts:{}, look:"document", dim:false,
-  chosenCode:"", selection:null, cleanup:null
-};
-
-/* Nesting is done with a dot in the name. There is deliberately no separate
-   tree in storage: renaming a whole branch takes a single
-   action rather than a traversal. */
-function codeDepth(name){ return String(name || "").split(".").length - 1; }
-function codeLeaf(name){ const parts = String(name || "").split("."); return parts[parts.length - 1]; }
-
-function codingCount(id){ return CODING.counts[id] || 0; }
-
-function renderCodeList(){
-  const codes = CODING.codes;
-  $("codeList").innerHTML = codes.length
-    ? codes.map(code => `
-        <div class="coding-code${CODING.chosenCode === code.id ? " chosen" : ""}"
-             data-code="${escAttr(code.id)}" style="padding-left:${10 + codeDepth(code.name) * 14}px">
-          <button type="button" class="coding-code-apply" title="${escAttr(tr("coding.apply"))}">
-            ${esc(codeLeaf(code.name))}
-          </button>
-          <span class="coding-code-count">${codingCount(code.id)}</span>
-          <button type="button" class="coding-code-menu" title="${escAttr(tr("coding.menu"))}">…</button>
-        </div>`).join("")
-    : `<div class="coding-code-empty">${tr("coding.no_codes")}</div>`;
-
-  $("codeList").querySelectorAll(".coding-code").forEach(row => {
-    const id = row.dataset.code;
-    row.querySelector(".coding-code-apply").onclick = () => applyCode(id);
-    row.querySelector(".coding-code-menu").onclick = () => codeMenu(id);
-  });
-}
-
-function respondentTurn(turn){
-  return CODING.moderator === null || turn.speaker !== CODING.moderator;
-}
-
-/* The codings of one turn, split into non-overlapping pieces: two
-   codes in the same place are a common thing, and both have to be highlighted. */
-function turnPieces(turn){
-  const own = CODING.codings.filter(coding => coding.turn_id === turn.id);
-  const boundaries = new Set([0, turn.text.length]);
-  for (const coding of own){ boundaries.add(coding.start); boundaries.add(coding.end); }
-  const points = [...boundaries].filter(n => n >= 0 && n <= turn.text.length).sort((a,b) => a-b);
-  const pieces = [];
-  for (let i = 0; i < points.length - 1; i++){
-    const from = points[i], before = points[i+1];
-    if (before <= from) continue;
-    pieces.push({
-      start: from, end: before, text: turn.text.slice(from, before),
-      marks: own.filter(coding => coding.start <= from && coding.end >= before)
-    });
-  }
-  return pieces.length ? pieces : [{start:0, end:turn.text.length, text:turn.text, marks:[]}];
-}
-
-function renderCodingDocument(){
-  return CODING.turns.map(turn => {
-    const reply = respondentTurn(turn);
-    const pieces = turnPieces(turn).map(piece => {
-      if (!piece.marks.length){
-        return `<span class="coding-plain">${esc(piece.text)}</span>`;
-      }
-      const label = piece.marks.map(coding => codeName(coding.code_id)).join(", ");
-      return `<mark class="coding-mark" data-marks="${escAttr(
-        piece.marks.map(coding => coding.id).join(" ")
-      )}" title="${escAttr(label)}">${esc(piece.text)}</mark>`;
-    }).join("");
-    return `
-      <div class="coding-turn${reply ? "" : " asked"}" data-turn="${escAttr(turn.id)}">
-        <div class="coding-turn-meta">
-          <span class="coding-speaker">${esc(speakerName(turn.speaker))}</span>
-          <span class="coding-time">${formatClock(turn.start)}</span>
-        </div>
-        <div class="coding-turn-text"${reply ? ' data-codeable="1"' : ""}>${pieces}</div>
-      </div>`;
-  }).join("");
-}
-
-function renderCodingQuotes(only){
-  const list = CODING.codings.filter(coding => !only || coding.code_id === only);
-  if (!list.length){
-    return `<div class="coding-code-empty">${
-      only ? tr("coding.nothing_for_code") : tr("coding.nothing_coded")
-    }</div>`;
-  }
-  return list.map(coding => `
-    <div class="coding-quote" data-mark="${escAttr(coding.id)}">
-      <div class="coding-quote-head">
-        <span class="coding-quote-code">${esc(codeName(coding.code_id))}</span>
-        <span class="coding-time">${formatClock(coding.time)}</span>
-        <button type="button" class="coding-quote-memo" title="${escAttr(tr("coding.memo"))}">${tr("coding.memo_button")}</button>
-        <button type="button" class="coding-quote-drop" title="${escAttr(tr("coding.remove"))}">×</button>
-      </div>
-      <blockquote>${esc(coding.quote)}</blockquote>
-      ${coding.memo ? `<div class="coding-quote-note">${esc(coding.memo)}</div>` : ""}
-    </div>`).join("");
-}
-
-function codeName(id){
-  const code = CODING.codes.find(code => code.id === id);
-  return code ? code.name : tr("coding.code_deleted");
-}
-
-function speakerName(number){
-  return CODING.moderator !== null && number === CODING.moderator
-    ? tr("role.interviewer") : tr("role.respondent");
-}
-
-/* Before coding we offer to remove the non-anonymised text: from
-   this point on it serves no work, yet carries the same risk as before.
-   Deletion is irreversible, so it is shown as a list and done with a button,
-   rather than happening by itself after «Сохранить» ("Save"). */
-function renderCleanup(){
-  const cleanup = CODING.cleanup;
-  const needed = CODING.allowed && cleanup && cleanup.ready && cleanup.left;
-  $("codingCleanup").hidden = !needed;
-  if (!needed) return;
-  const inside = cleanup.inside || {};
-  const pieces = [];
-  if (inside.turns) pieces.push(tr("cleanup.original_text", {turns: trn("count.turns", inside.turns)}));
-
-  if (inside.decisions) pieces.push(trn("count.decisions", inside.decisions));
-  $("codingCleanup").innerHTML = `
-    <div class="coding-cleanup-copy">
-      <h3>${tr("cleanup.title")}</h3>
-      <p>${tr("cleanup.note")}</p>
-      ${cleanup.files.length ? `<p>${tr("cleanup.files")}</p><ul>${
-        cleanup.files.map(filePath => `<li>${esc(filePath.split(/[\\/]/).pop())}</li>`).join("")
-      }</ul>` : ""}
-      ${pieces.length ? `<p>${tr("cleanup.in_project", {items: esc(pieces.join(", "))})}</p>` : ""}
-      ${inside.words ? `<p>${tr("cleanup.words", {n: inside.words})}</p>` : ""}
-      <p class="pass-note">${tr("cleanup.audio_stays")}</p>
-      <div class="pass-buttons">
-        <button type="button" id="btnCleanupSkip">${tr("cleanup.skip")}</button>
-        <button type="button" id="btnCleanupRun">${tr("common.delete")}</button>
-      </div>
-    </div>`;
-  $("btnCleanupSkip").onclick = () => { CODING.cleanup.left = false; renderCleanup(); };
-  $("btnCleanupRun").onclick = runCleanup;
-}
-
-async function runCleanup(){
-  if (!confirm(tr("cleanup.confirm"))) return;
-  const reply = await appCall("cleanup_run");
-  if (!reply.ok){ alert(reply.error || tr("error.failed")); return; }
-  CODING.cleanup = null;
-  $("codingCleanup").hidden = true;
-  await loadCoding();
-}
-
-function renderCoding(){
-  $("codingBlocked").hidden = CODING.allowed;
-  $("codingLayout").hidden = !CODING.allowed;
-  renderCleanup();
-  if (!CODING.allowed){
-    $("codingBlocked").innerHTML = `
-      <div class="coding-blocked-copy">
-        <h3>${tr("coding.blocked")}</h3>
-        <p>${esc(CODING.reason || tr("coding.finish_anonymization"))}</p>
-        <p class="pass-note">${tr("coding.blocked_note")}</p>
-      </div>`;
-    return;
-  }
-  renderCodeList();
-  const sheet = $("codingSheet");
-  sheet.classList.toggle("dimmed", CODING.dim);
-  if (CODING.look === "document") sheet.innerHTML = renderCodingDocument();
-  else if (CODING.look === "quotes") sheet.innerHTML = renderCodingQuotes("");
-  else sheet.innerHTML = renderCodingQuotes(CODING.chosenCode);
-
-  sheet.querySelectorAll(".coding-quote").forEach(card => {
-    const id = card.dataset.mark;
-    card.querySelector(".coding-quote-drop").onclick = () => dropCoding(id);
-    card.querySelector(".coding-quote-memo").onclick = () => editMemo(id);
-  });
-  sheet.querySelectorAll(".coding-mark").forEach(piece => {
-    piece.onclick = () => editMemo(piece.dataset.marks.split(" ")[0]);
-  });
-  const codedCount = CODING.codings.length;
-  $("codingStatus").textContent = codedCount
-    ? tr("coding.coded_count", {n: codedCount}) : "";
-}
-
-/* Mouse selection. Only answers are coded: the interviewer's question is visible,
-   but there is nothing to code in it — it isn't data, it's our own turn. */
-function readSelection(){
-  const selection = window.getSelection();
-  if (!selection || selection.isCollapsed) return null;
-  const node = selection.anchorNode;
-  const where = node && node.parentElement
-    ? node.parentElement.closest(".coding-turn-text") : null;
-  if (!where || !where.dataset.codeable) return null;
-  const turnItem = where.closest(".coding-turn").dataset.turn;
-  const fullRange = document.createRange();
-  fullRange.selectNodeContents(where);
-  const before = document.createRange();
-  before.setStart(fullRange.startContainer, fullRange.startOffset);
-  before.setEnd(selection.getRangeAt(0).startContainer, selection.getRangeAt(0).startOffset);
-  const start = before.toString().length;
-  const text = selection.toString();
-  if (!text.trim()) return null;
-  return {turn_id: turnItem, start, end: start + text.length, text: text};
-}
-
-document.addEventListener("selectionchange", () => {
-  if ($("codingView").hidden) return;
-  CODING.selection = readSelection();
-  $("codingHint").textContent = CODING.selection
-    ? tr("coding.selected", {text: CODING.selection.text.slice(0, 60)})
-    : tr("coding.hint");
-});
-
-async function applyCode(codeId){
-  CODING.chosenCode = codeId;
-  if (CODING.look === "code"){ renderCoding(); return; }
-  if (!CODING.selection){
-    $("codingHint").textContent = tr("coding.select_first");
-    renderCodeList();
-    return;
-  }
-  const piece = CODING.selection;
-  try {
-    const reply = await appCall("coding_add", {
-      turn_id: piece.turn_id, start: piece.start, end: piece.end,
-      code_id: codeId, coder: ($("researcherName").value || "").trim()
-    });
-    if (!reply.ok) throw new Error(reply.error || tr("error.code"));
-    CODING.codings = reply.codings || [];
-    CODING.counts = reply.counts || {};
-    CODING.selection = null;
-    window.getSelection().removeAllRanges();
-    renderCoding();
-  } catch (error){
-    $("codingHint").textContent = error.message || String(error);
-  }
-}
-
-async function dropCoding(id){
-  const reply = await appCall("coding_remove", id);
-  if (!reply.ok) return;
-  CODING.codings = reply.codings || [];
-  CODING.counts = reply.counts || {};
-  renderCoding();
-}
-
-function editMemo(id){
-  const coding = CODING.codings.find(coding => coding.id === id);
-  if (!coding) return;
-  const memo = $("codingMemo");
-  $("memoQuote").textContent = `«${coding.quote}»`;
-  $("memoText").value = coding.memo || "";
-  const closeDialog = async () => {
-    memo.removeEventListener("close", closeDialog);
-    if (memo.returnValue !== "ok") return;
-    const reply = await appCall("coding_add", {
-      id: coding.id, turn_id: coding.turn_id,
-      start: coding.start, end: coding.end,
-      code_id: coding.code_id, memo: $("memoText").value,
-      coder: coding.coder
-    });
-    if (reply.ok){
-      CODING.codings = reply.codings || [];
-      CODING.counts = reply.counts || {};
-      renderCoding();
-    }
-  };
-  memo.addEventListener("close", closeDialog);
-  memo.showModal();
-}
-
-async function codeMenu(id){
-  const code = CODING.codes.find(code => code.id === id);
-  if (!code) return;
-  const answerText = prompt(
-    tr("coding.edit_prompt", {name: code.name}),
-    code.name
-  );
-  if (answerText === null) return;
-  let reply;
-  if (!answerText.trim()){
-    if (!confirm(tr("coding.remove_confirm", {name: code.name}))) return;
-    reply = await appCall("code_remove", id);
-  } else if (answerText.trim().startsWith("=")){
-    const target = CODING.codes.find(
-      otherCode => otherCode.name.toLowerCase() === answerText.trim().slice(1).trim().toLowerCase()
-    );
-    if (!target){ alert(tr("coding.no_such_code")); return; }
-    reply = await appCall("code_merge", id, target.id);
-  } else {
-    reply = await appCall("code_rename", id, answerText.trim());
-  }
-  if (!reply.ok){ alert(reply.error || tr("error.failed")); return; }
-  CODING.codes = reply.codes || CODING.codes;
-  if (reply.codings) CODING.codings = reply.codings;
-  if (reply.counts) CODING.counts = reply.counts;
-  renderCoding();
-}
-
-$("btnAddCode").onclick = async () => {
-  const fileName = $("codeName").value.trim();
-  if (!fileName) return;
-  const reply = await appCall("code_save", fileName);
-  if (!reply.ok){ $("codingHint").textContent = reply.error || tr("error.failed"); return; }
-  CODING.codes = reply.codes || [];
-  $("codeName").value = "";
-  renderCoding();
-};
-
-$("codeName").addEventListener("keydown", event => {
-  if (event.key === "Enter"){ event.preventDefault(); $("btnAddCode").click(); }
-});
-
-$("codingDim").onchange = () => { CODING.dim = $("codingDim").checked; renderCoding(); };
-
-document.querySelectorAll(".coding-view-tab").forEach(tab => {
-  tab.onclick = () => {
-    CODING.look = tab.dataset.look;
-    document.querySelectorAll(".coding-view-tab").forEach(
-      otherTab => otherTab.classList.toggle("active", otherTab === tab));
-    renderCoding();
-  };
-});
-
-async function loadCoding(){
-  try {
-    const reply = await appCall("coding_open");
-    if (!reply.ok) throw new Error(reply.error || tr("error.open_coding"));
-    CODING.allowed = !!reply.allowed;
-    CODING.reason = reply.reason || "";
-    CODING.turns = reply.turns || [];
-    CODING.moderator = reply.moderator === undefined ? null : reply.moderator;
-    CODING.codings = reply.codings || [];
-    CODING.codes = reply.codes || [];
-    CODING.counts = reply.counts || {};
-    CODING.cleanup = await appCall("cleanup_preview").catch(() => null);
-  } catch (error){
-    CODING.allowed = false;
-    CODING.reason = error.message || String(error);
-  }
-  renderCoding();
-}
 
 /* Two is the usual case for an interview, and that's the number the program starts with.
 

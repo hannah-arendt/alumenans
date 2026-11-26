@@ -101,7 +101,7 @@ class VocativeTests(unittest.TestCase):
 class WiringTests(unittest.TestCase):
     """The rule must be wired in, not merely written."""
 
-    SOURCE = (PACKAGE_DIR / "app.py").read_text(
+    SOURCE = (PACKAGE_DIR / "detection" / "spans.py").read_text(
         encoding="utf-8"
     )
 

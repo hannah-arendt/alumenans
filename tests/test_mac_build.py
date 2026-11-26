@@ -437,7 +437,10 @@ class PlatformTests(unittest.TestCase):
     """What in the program itself depends on the operating system."""
 
     def test_windows_only_code_switches_itself_off(self):
-        source_text = (PACKAGE_DIR / "app.py").read_text(encoding="utf-8")
+        source_text = "".join(
+            (PACKAGE_DIR / name).read_text(encoding="utf-8")
+            for name in ("launch.py", "api.py")
+        )
         for guard in (
             'if sys.platform != "win32":',
             'if os.name == "nt":',
@@ -453,7 +456,7 @@ class PlatformTests(unittest.TestCase):
         self.assertIn('"Library" / "Application Support" / "ALumenans"', paths)
         # The window and the worker get the folder from one place, rather
         # than each having its own.
-        for name in ("app.py", "transcription/worker.py"):
+        for name in ("launch.py", "transcription/worker.py"):
             with self.subTest(file=name):
                 source_text = (PACKAGE_DIR / name).read_text(encoding="utf-8")
                 self.assertIn("models_home()", source_text)

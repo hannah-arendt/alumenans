@@ -2,8 +2,8 @@
 # -*- coding: utf-8 -*-
 """The study: what twenty interviews have in common.
 
-The guide, the study programme, the list of what doesn't need to be
-anonymized, and the codebook belong not to an individual recording but to
+The guide, the study programme, and the list of what doesn't need to be
+anonymized belong not to an individual recording but to
 the whole series. Without this concept, every interview drags along its
 own copy of the shared documents, and the program doesn't know that twenty
 recordings are one piece of work.
@@ -141,17 +141,6 @@ CREATE TABLE IF NOT EXISTS subject_terms (
     confirmed  INTEGER NOT NULL DEFAULT 0,
     created_at REAL NOT NULL,
     PRIMARY KEY (study_id, term)
-);
-
--- The codebook is shared by the series: codes are created once per study.
-CREATE TABLE IF NOT EXISTS codes (
-    id         TEXT PRIMARY KEY,
-    study_id   TEXT NOT NULL,
-    parent_id  TEXT,
-    name       TEXT NOT NULL DEFAULT '',
-    definition TEXT NOT NULL DEFAULT '',
-    origin     TEXT NOT NULL DEFAULT '',
-    created_at REAL NOT NULL
 );
 """
 
@@ -532,123 +521,6 @@ class StudyStore:
                     if isinstance(item, dict) and str(item.get("name") or "")
                 ],
             )
-
-    # -- codebook ----------------------------------------------------------
-    #
-    # A code belongs to the study: that's exactly what makes it useful,
-    # that «отписка из-за денег» ("cancelled because of money") in the
-    # fifth interview and in the twelfth is one and the same code.
-
-    def save_code(
-        self,
-        study_id: str,
-        name: str,
-        *,
-        definition: str = "",
-        origin: str = "",
-        code_id: str = "",
-    ) -> str:
-        """Creates a code or edits one that already exists.
-
-        The name is brought to a common form, and the match is sought
-        case-insensitively: «Отписка» and «отписка» are one code, otherwise
-        the codebook sprouts duplicates all by itself."""
-
-        from alumenans.codebook import code_key, new_code_id, normalize_name, now
-
-        clean = normalize_name(name)
-        if not clean:
-            raise StudyError(t("study.code_needs_name"))
-        connection = self.connect()
-        if not code_id:
-            existing = next(
-                (
-                    line["id"]
-                    for line in connection.execute(
-                        "SELECT id, name FROM codes WHERE study_id = ?", (study_id,)
-                    )
-                    if code_key(line["name"]) == code_key(clean)
-                ),
-                None,
-            )
-            code_id = existing or new_code_id()
-        connection.execute(
-            "INSERT INTO codes (id, study_id, parent_id, name, definition, origin,"
-            " created_at) VALUES (?, ?, NULL, ?, ?, ?, ?)"
-            " ON CONFLICT(id) DO UPDATE SET name = excluded.name,"
-            " definition = excluded.definition, origin = excluded.origin",
-            (code_id, study_id, clean, str(definition or ""), str(origin or ""), now()),
-        )
-        connection.commit()
-        return code_id
-
-    def codes(self, study_id: str) -> list:
-        """The study's codebook."""
-
-        from alumenans.codebook import Code, sort_codes
-
-        lines = self.connect().execute(
-            "SELECT id, name, definition, origin, created_at FROM codes"
-            " WHERE study_id = ?",
-            (study_id,),
-        ).fetchall()
-        return sort_codes(
-            Code(
-                id=line["id"],
-                name=line["name"],
-                definition=line["definition"],
-                origin=line["origin"],
-                created_at=line["created_at"],
-            )
-            for line in lines
-        )
-
-    def rename_code(self, study_id: str, code_id: str, name: str) -> list:
-        """Renames a code together with everything that sits under it."""
-
-        from alumenans.codebook import normalize_name, rename_in_tree
-
-        new_name = normalize_name(name)
-        if not new_name:
-            raise StudyError(t("study.code_needs_name"))
-        before = next((code for code in self.codes(study_id) if code.id == code_id), None)
-        if before is None:
-            raise StudyError(t("study.no_such_code"))
-        connection = self.connect()
-        for code in self.codes(study_id):
-            after = rename_in_tree(code.name, before.name, new_name)
-            if after != code.name:
-                connection.execute(
-                    "UPDATE codes SET name = ? WHERE id = ?", (after, code.id)
-                )
-        connection.commit()
-        return self.codes(study_id)
-
-    def merge_codes(self, study_id: str, source_id: str, target_id: str) -> str:
-        """Merges one code into another.
-
-        Two researchers will inevitably call the same thing by different
-        names: «страх» ("fear") and «опасения» ("apprehension"). As long as
-        they can't be merged, the codebook fills up with junk, and no
-        analysis can be built on it. The markup itself isn't lost in the
-        process: the interview carries it over to itself."""
-
-        codes = {code.id: code for code in self.codes(study_id)}
-        if source_id not in codes or target_id not in codes:
-            raise StudyError(t("study.no_such_code"))
-        if source_id == target_id:
-            return target_id
-        connection = self.connect()
-        connection.execute("DELETE FROM codes WHERE id = ?", (source_id,))
-        connection.commit()
-        return target_id
-
-    def remove_code(self, study_id: str, code_id: str) -> None:
-        connection = self.connect()
-        connection.execute(
-            "DELETE FROM codes WHERE study_id = ? AND id = ?", (study_id, code_id)
-        )
-        connection.commit()
 
     def interviews(self, study_id: str) -> list[dict]:
         connection = self.connect()
