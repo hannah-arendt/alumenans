@@ -15,7 +15,7 @@ dist/
 
 # Program state when it runs from a source checkout (INSTALL_ROOT = src/)
 src/.*
-src/models/
+src/models
 src/tools/
 startup_stack.txt
 

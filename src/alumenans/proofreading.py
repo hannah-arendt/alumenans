@@ -1081,9 +1081,9 @@ def _unquoted_name_issues(turn: dict, turn_index: int) -> list[dict]:
     if not text:
         return []
     try:
-        from alumenans import app
+        from alumenans.detection.curated import curated_spans
 
-        findings = app.curated_spans(text)
+        findings = curated_spans(text)
     except Exception:
         return []
 

@@ -17,7 +17,7 @@ from pathlib import Path
 # taken from src/, even if `pip install -e .` hasn't been run yet.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from alumenans import app  # noqa: E402
+from alumenans import launch  # noqa: E402
 
 
 def timed(label, action):
@@ -31,10 +31,10 @@ def main() -> int:
     print("=" * 62)
     print(f"Python: {sys.version.split()[0]}")
     print(f"From:   {sys.executable}")
-    print(f"Folder: {app.INSTALL_ROOT}")
+    print(f"Folder: {launch.INSTALL_ROOT}")
     print()
 
-    missing, elapsed, _ = timed("packages", app.missing_packages)
+    missing, elapsed, _ = timed("packages", launch.missing_packages)
     print(f"[{elapsed:5.2f} s] Packages")
     if missing:
         print("   NOT FOUND — the build is incomplete, the program won't start.")
@@ -46,11 +46,11 @@ def main() -> int:
         print("   all present")
     print()
 
-    ready, elapsed, _ = timed("models", app.transcriber_models_ready)
+    ready, elapsed, _ = timed("models", launch.transcriber_models_ready)
     print(f"[{elapsed:5.2f} s] Transcription models: "
           f"{'present' if ready else 'NOT FOUND'}")
     if not ready:
-        root = app.TRANSCRIBER_MODELS
+        root = launch.TRANSCRIBER_MODELS
         for relative in (
             Path("asr") / "v3_e2e_ctc.int8.onnx",
             Path("vad") / "silero_vad.onnx",
@@ -63,10 +63,10 @@ def main() -> int:
         print("   download them on every launch")
     print()
 
-    first_run = not app.FIRST_RUN_MARK.exists()
+    first_run = not launch.FIRST_RUN_MARK.exists()
     print(f"[       ] First-run mark: "
           f"{'MISSING — counts as a first run' if first_run else 'present'}")
-    print(f"          {app.FIRST_RUN_MARK}")
+    print(f"          {launch.FIRST_RUN_MARK}")
     print()
 
     # Versions are for the email to the developer: the build installs them
@@ -91,7 +91,7 @@ def main() -> int:
     else:
         print("RESULT: there should be no long preparation; the window must")
         print("open right away. If it still hangs, send the file")
-        print(f"{app.STARTUP_LOG.name} — the program writes it on every launch.")
+        print(f"{launch.STARTUP_LOG.name} — the program writes it on every launch.")
     return 0
 
 

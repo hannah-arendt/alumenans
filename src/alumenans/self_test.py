@@ -61,13 +61,14 @@ def _check_resources() -> str:
 
 
 def _check_text_pipeline() -> str:
-    from alumenans import app
+    from alumenans.detection.morphology import morph_tools
+    from alumenans.detection.spans import natasha_spans
     from alumenans.proofreading import analyze_proofreading
 
-    people = [s for s in app.natasha_spans(SAMPLE) if s["cat"] == "person"]
+    people = [s for s in natasha_spans(SAMPLE) if s["cat"] == "person"]
     if not people:
         raise AssertionError(f"Natasha found no person in {SAMPLE!r}")
-    _, pymorphy = app.morph_tools()
+    _, pymorphy = morph_tools()
     lemma = pymorphy.parse("Петровым")[0].normal_form
     if lemma != "петров":
         raise AssertionError(f"pymorphy3 lemma of 'Петровым' is {lemma!r}")
@@ -82,9 +83,9 @@ def _check_text_pipeline() -> str:
 def _check_http() -> str:
     from http.server import ThreadingHTTPServer
 
-    from alumenans import app
+    from alumenans import server as http
 
-    server = ThreadingHTTPServer(("127.0.0.1", app.free_port()), app.Handler)
+    server = ThreadingHTTPServer(("127.0.0.1", http.free_port()), http.Handler)
     threading.Thread(target=server.serve_forever, daemon=True).start()
     # Never go through a proxy for loopback, whatever the environment says.
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
@@ -99,7 +100,7 @@ def _check_http() -> str:
             if b"const I18N" not in response.read():
                 raise AssertionError("GET /i18n.js did not return the interface catalog")
         health = urllib.request.Request(
-            base + "/health", headers={app.SESSION_HEADER: app.SESSION_SECRET}
+            base + "/health", headers={http.SESSION_HEADER: http.SESSION_SECRET}
         )
         with opener.open(health, timeout=30) as response:
             json.loads(response.read())

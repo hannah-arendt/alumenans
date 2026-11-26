@@ -380,19 +380,21 @@ def _reset_shared_state(case: Case) -> None:
     """The analysis code keeps the open study and recording in module
     globals. A stage must not see what the previous case left there."""
 
-    from alumenans import app, proofreading
+    from alumenans import proofreading
+    from alumenans.current_audio import AUDIO_STATE
+    from alumenans.detection.subject import set_subject_terms
 
-    app.set_subject_terms(())
-    app.AUDIO_STATE["paths"] = [case.audio] if case.audio else []
+    set_subject_terms(())
+    AUDIO_STATE["paths"] = [case.audio] if case.audio else []
     proofreading.STUDY_WORDS.clear()
 
 
 def _detection_models() -> dict:
-    from alumenans import app
+    from alumenans.detection.models import MODEL_STATE, warmup
 
-    if app.MODEL_STATE.get("setup") != "done":
-        app.warmup()
-    state = {key: app.MODEL_STATE.get(key) for key in ("natasha", "gliner")}
+    if MODEL_STATE.get("setup") != "done":
+        warmup()
+    state = {key: MODEL_STATE.get(key) for key in ("natasha", "gliner")}
     not_ready = [name for name, value in state.items() if value != "ready"]
     if not_ready:
         raise StageUnavailable(
@@ -405,19 +407,21 @@ def detect(case: Case, turns: list[dict]) -> dict:
     """Personal-data search over the whole transcript: the Python half of
     anonymization. What the page adds on top of it is not covered."""
 
-    from alumenans import app
+    from alumenans.current_audio import current_pseudonym
+    from alumenans.detection.spans import entity_groups, find_spans
+    from alumenans.introduction import respondent_speaker
 
     models = _detection_models()
     _reset_shared_state(case)
     text, _ = transcript_text(turns)
-    spans = app.find_spans(text)
+    spans = find_spans(text)
     return {
         "models": models,
         "text": text,
         "spans": [dict(span, text=text[span["start"]:span["stop"]]) for span in spans],
-        "entities": app.entity_groups(text, spans),
-        "pseudonym": app.current_pseudonym(),
-        "respondent": app.respondent_speaker(text),
+        "entities": entity_groups(text, spans),
+        "pseudonym": current_pseudonym(),
+        "respondent": respondent_speaker(text),
     }
 
 
@@ -470,8 +474,13 @@ STAGES = {
 def run_stage(case: Case, stage: str, transcript: dict | None = None) -> str:
     """Runs one stage and returns its output as canonical JSON text."""
 
+    from alumenans import i18n
+
     if transcript is None:
         transcript = load_transcript(case)
+    # Messages in the output follow the interface language, which on a
+    # developer's machine is whatever they last chose in the app.
+    i18n.set_language("en", persist=False)
     return canonical(STAGES[stage](case, transcript))
 
 

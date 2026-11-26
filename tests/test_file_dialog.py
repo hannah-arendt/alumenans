@@ -21,7 +21,7 @@ from alumenans.paths import PACKAGE_DIR
 from pathlib import Path
 
 
-from alumenans.app import AppApi
+from alumenans.api import AppApi
 
 
 class ChosenPathTests(unittest.TestCase):
@@ -52,7 +52,7 @@ class ChosenPathTests(unittest.TestCase):
 class CallSiteTests(unittest.TestCase):
     """No selection dialog's result is parsed by hand."""
 
-    SOURCE = (PACKAGE_DIR / "app.py").read_text(
+    SOURCE = (PACKAGE_DIR / "api.py").read_text(
         encoding="utf-8"
     )
 

@@ -66,7 +66,7 @@ class WorkingDirectoryTests(unittest.TestCase):
         self.assertEqual(answer.returncode, 0, answer.stderr[:300])
 
     def test_every_child_process_asks_the_same_question(self):
-        for name in ("app.py", "transcription/service.py"):
+        for name in ("launch.py", "transcription/service.py"):
             source_text = (FILES / name).read_text(encoding="utf-8")
             with self.subTest(file=name):
                 self.assertNotIn("cwd=str(INSTALL_ROOT)", source_text)
