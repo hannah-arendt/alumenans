@@ -90,14 +90,6 @@ def read_study_file(path) -> dict:
             for word in data.get("words") or []
             if str(word).strip()
         ],
-        "codes": [
-            {
-                "name": str(code.get("name") or "").strip(),
-                "definition": str(code.get("definition") or ""),
-            }
-            for code in data.get("codes") or []
-            if isinstance(code, dict) and str(code.get("name") or "").strip()
-        ],
         "documents": [
             {
                 "name": str(document.get("name") or ""),

@@ -11,8 +11,7 @@ SQLite is part of Python's standard library, so no new dependencies
 appear, and writes stay atomic even through a sudden power-off.
 
 The main thing in this file is not the tables but the stable identifiers.
-A word belongs to a turn, a turn to an interview, and a future code will
-be anchored to a turn and an offset inside it. As long as edits are
+A word belongs to a turn and a turn to an interview. As long as edits are
 textual, any anchoring falls apart at the very first edit; here it
 survives the edit, because the turn's identifier is derived from the
 sound, not from the text.
@@ -130,29 +129,6 @@ CREATE TABLE IF NOT EXISTS anonymization_key_archive (
     entries      INTEGER NOT NULL DEFAULT 0,
     created_at   REAL NOT NULL
 );
-
-CREATE TABLE IF NOT EXISTS codes (
-    id           TEXT PRIMARY KEY,
-    interview_id TEXT NOT NULL DEFAULT '',
-    parent_id    TEXT,
-    name         TEXT NOT NULL DEFAULT '',
-    definition   TEXT NOT NULL DEFAULT '',
-    created_at   REAL NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS codings (
-    id           TEXT PRIMARY KEY,
-    interview_id TEXT NOT NULL,
-    turn_id      TEXT NOT NULL,
-    start        INTEGER NOT NULL DEFAULT 0,
-    end          INTEGER NOT NULL DEFAULT 0,
-    code_id      TEXT NOT NULL,
-    memo         TEXT NOT NULL DEFAULT '',
-    coder        TEXT NOT NULL DEFAULT '',
-    created_at   REAL NOT NULL
-);
-
-CREATE INDEX IF NOT EXISTS codings_by_turn ON codings (turn_id, start);
 """
 
 _UNSAFE_NAME = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
@@ -621,7 +597,7 @@ class ProjectStore:
     ) -> None:
         """Marks that the anonymization has been carried through to the end.
 
-        A non-anonymized transcript must not be coded: quotes from it spread
+        A non-anonymized transcript must not be exported: quotes from it spread
         into tables, reports and exchange files, and can never be pulled
         back from there. So the state lives in the interview itself, not in
         the person's memory. ``left`` is how many finds remain unresolved:
@@ -636,7 +612,7 @@ class ProjectStore:
         connection.commit()
 
     def anonymization_state(self, interview_id: str) -> dict:
-        """Whether the anonymization is finished and coding is allowed."""
+        """Whether the anonymization is finished."""
 
         line = self.connect().execute(
             "SELECT anonymized_at, anonymization_left FROM interview WHERE id = ?",
@@ -657,18 +633,14 @@ class ProjectStore:
             }
         return {"done": True, "left": 0, "at": when, "reason": ""}
 
-    # -- coding markup -----------------------------------------------------
-    #
-    # The markup lives in the interview, and the codebook in the study. That
-    # way an interview can be handed to a colleague whole, while the
-    # codebook is kept shared.
+    # -- anonymized text ---------------------------------------------------
 
     def save_anonymized_turns(self, interview_id: str, turns: Iterable[dict]) -> int:
         """Remembers what the turns look like after anonymization.
 
         A separate column rather than replacing the text: the original is
         needed so the person can go back to proofreading and see what they
-        edited. But only the anonymized one gets coded and quoted."""
+        edited. But only the anonymized one gets exported and quoted."""
 
         connection = self.connect()
         saved = 0
@@ -688,7 +660,7 @@ class ProjectStore:
         return saved
 
     def anonymized_turns(self, interview_id: str) -> list[dict]:
-        """The text for coding. Empty means there's nothing to code yet."""
+        """The anonymized text. Empty means there's nothing to export yet."""
 
         return [
             {
@@ -876,115 +848,6 @@ class ProjectStore:
         finally:
             connection.isolation_level = previous
         return before
-
-    def save_coding(
-        self,
-        interview_id: str,
-        *,
-        turn_id: str,
-        start: int,
-        end: int,
-        code_id: str,
-        memo: str = "",
-        coder: str = "",
-        coding_id: str = "",
-    ) -> str:
-        """Tags a piece of a turn with a code.
-
-        The piece is given by a turn and an offset inside it, not by a
-        position in the whole text: the turn survives an edit, whereas
-        offsets in the full text shift with the very first inserted letter."""
-
-        if not str(turn_id or "").strip():
-            raise ProjectError(t("project.coding_needs_turn"))
-        if not str(code_id or "").strip():
-            raise ProjectError(t("project.coding_needs_code"))
-        start_offset, end_offset = int(start), int(end)
-        if end_offset <= start_offset:
-            raise ProjectError(t("project.coding_empty"))
-        connection = self.connect()
-        coding_id = coding_id or ("m-" + uuid.uuid4().hex[:12])
-        connection.execute(
-            "INSERT INTO codings (id, interview_id, turn_id, start, end, code_id,"
-            " memo, coder, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
-            " ON CONFLICT(id) DO UPDATE SET turn_id = excluded.turn_id,"
-            " start = excluded.start, end = excluded.end,"
-            " code_id = excluded.code_id, memo = excluded.memo,"
-            " coder = excluded.coder",
-            (
-                coding_id,
-                interview_id,
-                str(turn_id),
-                start_offset,
-                end_offset,
-                str(code_id),
-                str(memo or ""),
-                str(coder or ""),
-                time.time(),
-            ),
-        )
-        connection.commit()
-        return coding_id
-
-    def codings(self, interview_id: str, *, code_id: str = "") -> list[dict]:
-        """All of the interview's markup, in conversation order."""
-
-        query = (
-            "SELECT g.id, g.turn_id, g.start, g.end, g.code_id, g.memo, g.coder,"
-            " g.created_at, t.ordinal, t.speaker, t.start AS time,"
-            " CASE WHEN t.anonymized_text <> '' THEN t.anonymized_text"
-            "      ELSE t.text END AS text"
-            " FROM codings g JOIN turns t ON t.id = g.turn_id"
-            " WHERE g.interview_id = ?"
-        )
-        params: list = [interview_id]
-        if code_id:
-            query += " AND g.code_id = ?"
-            params.append(code_id)
-        query += " ORDER BY t.ordinal, g.start"
-        return [
-            {
-                "id": line["id"],
-                "turn_id": line["turn_id"],
-                "start": int(line["start"]),
-                "end": int(line["end"]),
-                "code_id": line["code_id"],
-                "memo": line["memo"],
-                "coder": line["coder"],
-                "speaker": int(line["speaker"]),
-                "time": _number(line["time"]),
-                "quote": str(line["text"])[int(line["start"]) : int(line["end"])],
-            }
-            for line in self.connect().execute(query, params)
-        ]
-
-    def remove_coding(self, coding_id: str) -> None:
-        connection = self.connect()
-        connection.execute("DELETE FROM codings WHERE id = ?", (coding_id,))
-        connection.commit()
-
-    def move_codings(self, interview_id: str, source_id: str, target_id: str) -> int:
-        """Moves markup from one code to another when they are merged."""
-
-        connection = self.connect()
-        cursor = connection.execute(
-            "UPDATE codings SET code_id = ? WHERE interview_id = ? AND code_id = ?",
-            (target_id, interview_id, source_id),
-        )
-        connection.commit()
-        return cursor.rowcount
-
-    def coding_counts(self, interview_id: str) -> dict[str, int]:
-        """How many times each code has been applied in this interview."""
-
-        return {
-            line["code_id"]: int(line["сколько"])
-            for line in self.connect().execute(
-                "SELECT code_id, COUNT(*) AS сколько FROM codings"
-                " WHERE interview_id = ? GROUP BY code_id",
-                (interview_id,),
-            )
-        }
 
     def save_anonymization_key(
         self,

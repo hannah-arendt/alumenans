@@ -16,7 +16,7 @@ T              ?=
 TORCH_CPU_INDEX := https://download.pytorch.org/whl/cpu
 
 .DEFAULT_GOAL := help
-.PHONY: help venv install install-cpu linux-gui test pytest run self-test worker-help startup-check set-version wheel clean
+.PHONY: help venv install install-cpu linux-gui test pytest run self-test corpus worker-help startup-check set-version wheel clean
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*## ' $(MAKEFILE_LIST) | \
@@ -52,6 +52,9 @@ run: $(PY) ## Launch the app
 
 self-test: $(PY) ## Check the install works, without a window or models (what CI runs)
 	PYTHONPATH=src $(PY) -m alumenans --self-test
+
+corpus: $(PY) ## Test corpus of real recordings (A="list" | "transcribe" | "draft" | "run" | "accept" | "metrics")
+	PYTHONPATH=src $(PY) tools/corpus.py $(or $(A),list)
 
 worker-help: $(PY) ## Show the transcription worker's command-line options
 	$(PY) -m alumenans.transcription.worker --help

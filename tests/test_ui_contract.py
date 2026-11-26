@@ -364,7 +364,7 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertIn("g.public = true;", HTML)
 
     def test_finishing_anonymisation_is_recorded(self):
-        # Coding non-anonymised text is not allowed, and it is the program, not
+        # Exporting non-anonymised text is not allowed, and it is the program, not
         # the person, that has to remember this.
         self.assertIn("function markAnonymizationDone()", HTML)
         self.assertIn(
@@ -468,56 +468,6 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertIn('id="btnSendToTeam"', HTML)
         self.assertIn('appCall("export_interview")', HTML)
         self.assertNotIn("XMLHttpRequest", HTML)
-
-    def test_coding_is_not_offered_in_the_program(self):
-        """Coding has moved to Radicans, a shared tool.
-
-        It is collaborative by nature: the codebook is born at a meeting and
-        changes all the time, and everyone must see the others' coding.
-        Two coding systems mean two codebooks that will drift apart.
-
-        The coding code is not removed from the program: until Radicans exists, it is needed."""
-
-        self.assertIn(
-            '<button class="mode-tab" id="tabCoding" role="tab"'
-            ' aria-selected="false" hidden data-i18n="tab.coding">',
-            HTML,
-        )
-
-    def test_the_coding_screen_is_codes_left_text_right(self):
-        self.assertIn('id="codingView"', HTML)
-        self.assertIn(".coding-layout{display:grid; grid-template-columns:280px 1fr", HTML)
-        self.assertIn('id="codeList"', HTML)
-        self.assertIn('id="codingSheet"', HTML)
-        # The state is requested on every entry: anonymisation may have been
-        # completed a minute ago.
-        self.assertIn("if (coding) void loadCoding();", HTML)
-
-    def test_only_the_respondent_answers_can_be_selected(self):
-        # The interviewer's question is shown in full — without it the answer can't be read —
-        # but there is nothing to select in it.
-        self.assertIn("function respondentTurn(turn)", HTML)
-        self.assertIn('data-codeable="1"', HTML)
-        self.assertIn("if (!where || !where.dataset.codeable) return null;", HTML)
-        self.assertIn(".coding-turn.asked .coding-turn-text{", HTML)
-        self.assertIn("user-select:none", HTML)
-
-    def test_marking_is_made_by_selecting_and_choosing_a_code(self):
-        self.assertIn("function readSelection()", HTML)
-        self.assertIn('appCall("coding_add"', HTML)
-        self.assertIn('appCall("coding_remove", id)', HTML)
-        # A note on a coding gets its own window, not prompt.
-        self.assertIn('id="codingMemo"', HTML)
-        self.assertIn("function editMemo(id)", HTML)
-
-    def test_all_four_ways_of_looking_are_there(self):
-        for look in ('data-look="document"', 'data-look="quotes"', 'data-look="code"'):
-            with self.subTest(look=look):
-                self.assertIn(look, HTML)
-        # Dimming the uncoded text is the fourth one; it combines with any of them.
-        self.assertIn('id="codingDim"', HTML)
-        self.assertIn(".coding-sheet.dimmed .coding-plain{", HTML)
-        self.assertIn("mark class=\"coding-mark\"", HTML)
 
     def test_the_respondent_gets_the_pseudonym_from_the_file_name(self):
         # Suggesting «Персона 1» ("Person 1") here would mean making

@@ -26,3 +26,10 @@ startup_stack.txt
 *.mp4
 *.docx
 *-расшифровка*.txt
+# Local working files, never committed
+docs/local/
+
+# Test recordings that are not public (see tests/corpus/README.md)
+tests/corpus/private/
+# Current output of the corpus stages, kept only for looking at a diff
+tests/corpus/*/*/out/

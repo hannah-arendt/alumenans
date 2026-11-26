@@ -8,7 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-ALumenans is a desktop app for sociologists that turns Russian-language interview recordings into transcripts, then supports proofreading, anonymization of personal data, and qualitative coding. Everything runs locally and offline after first launch. The only network use is the first-run download of models. All Python packages ship inside the builds; the app never runs pip. The app runs on Windows (Inno Setup installer with bundled Python) and macOS (an app bundle that is also built on Windows).
+ALumenans is a desktop app for sociologists that turns Russian-language interview recordings into transcripts, then supports proofreading and anonymization of personal data. Everything runs locally and offline after first launch. The only network use is the first-run download of models. All Python packages ship inside the builds; the app never runs pip. The app runs on Windows (Inno Setup installer with bundled Python) and macOS (an app bundle that is also built on Windows).
 
 Layout: the `alumenans` package is in `src/alumenans/`, with `tests/` and `tools/` at the repo root. `packaging/windows/` holds the Windows installer, `packaging/windows/dev/` the `.bat` launchers for running from a checkout, and `packaging/macos/` the macOS build. Dependencies and metadata are in `pyproject.toml`.
 
@@ -51,9 +51,9 @@ Releases (`.github/workflows/release.yml`) are started by hand from the Actions 
 
 ## Architecture
 
-**Shell (`app.py`).** `main()` starts a `ThreadingHTTPServer` on 127.0.0.1 and a pywebview window that shows `resources/anonymizer.html`. The single-file HTML holds the whole UI: proofreading, anonymization and coding tabs. The UI reaches Python in two ways:
+**Shell (`app.py`).** `main()` starts a `ThreadingHTTPServer` on 127.0.0.1 and a pywebview window that shows `resources/anonymizer.html`. The single-file HTML holds the whole UI: transcription, proofreading and anonymization tabs. The UI reaches Python in two ways:
 - **HTTP endpoints on `Handler`** for stateless text analysis: `/analyze`, `/proofread`, `/inflect`, `/known-words`, `/guide-report`, `/warmup`, `/health`, plus the UI catalog script `/i18n.js` and audio serving with byte ranges.
-- **`AppApi`, exposed as `window.pywebview.api`**, for stateful operations: picking media, transcription jobs, project and study files, coding, and saving txt, docx or encrypted key archives.
+- **`AppApi`, exposed as `window.pywebview.api`**, for stateful operations: picking media, transcription jobs, project and study files, and saving txt, docx or encrypted key archives.
 
 A separate setup-window process shows progress while `prepare_launch()` downloads models. It closes when the UI calls `mark_interface_ready`. If a module listed in `dependencies.py` is missing, launch stops with an "incomplete build" message (`is_incomplete_build()` recognizes it in either UI language). Nothing is installed at runtime.
 
@@ -65,8 +65,8 @@ A separate setup-window process shows progress while `prepare_launch()` download
 
 **Persistence (`storage/`, SQLite encrypted with SQLCipher via `sqlcipher3`):**
 - `cipher.py`: one study password opens every file of a study. It is stretched once per unlock (PBKDF2) into a raw key; each file is opened with that key plus the study salt, which SQLCipher keeps as the file's first 16 bytes. All pages, the WAL included, are encrypted. The stores import `from sqlcipher3 import dbapi2 as sqlite3`: its exceptions are not stdlib `sqlite3.Error`. Nothing touches a store until a study folder is chosen and unlocked (`AppApi._study_gate`), and nothing is written next to the audio.
-- `project_store.py`: one project file per interview, kept in the *study* folder rather than next to the audio, so it survives deletion of the recording. Turn IDs come from the audio, not the text, so code and decision anchors survive text edits.
-- `study_store.py`: data shared across a series of interviews: the guide, study documents, the codebook, and the explicit "do not anonymize" list. The app may *suggest* entries for this list but must never add them silently.
+- `project_store.py`: one project file per interview, kept in the *study* folder rather than next to the audio, so it survives deletion of the recording. Turn IDs come from the audio, not the text, so decision anchors survive text edits.
+- `study_store.py`: data shared across a series of interviews: the guide, study documents, and the explicit "do not anonymize" list. The app may *suggest* entries for this list but must never add them silently.
 - `exchange.py`: a file-based boundary with the shared environment. A study file comes in and anonymized exports go out. It must never make network calls.
 - `secret_zip.py`: an AES-256 WinZip-compatible zip for the anonymization key, built with stdlib only.
 

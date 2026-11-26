@@ -1821,9 +1821,7 @@ class AppApi:
         self._interview_id = ""
         self._project_pinned = False
         self.media_parts = []
-        # Re-entrant locks: the coding methods call each other — the
-        # codebook is needed both when merging and when deleting — and an
-        # ordinary lock would deadlock here on its own nested call.
+        # Re-entrant locks: an ordinary lock would deadlock on a nested call.
         self._project_lock = threading.RLock()
         self._study = None
         self._study_id = ""
@@ -2618,7 +2616,7 @@ class AppApi:
             return ""
 
     def settings(self, researcher=None):
-        """The researcher's name: future codes and memos will be signed with it."""
+        """The researcher's name: exported interviews are signed with it."""
 
         path = RESEARCHER_FILE
         try:
@@ -2713,7 +2711,7 @@ class AppApi:
         """Marks the anonymisation as finished.
 
         Along with the mark comes the anonymised text, turn by turn: that is
-        what gets coded, not the original."""
+        what gets exported, not the original."""
 
         with self._project_lock:
             store = self._project_store()
@@ -2727,70 +2725,6 @@ class AppApi:
             except Exception as error:
                 return {"ok": False, "error": str(error)[:400]}
             return {"ok": True, "state": state}
-
-    def coding_state(self):
-        """Whether this interview may be coded.
-
-        Coding a non-anonymised transcript spreads real names across tables,
-        reports and exchange files — and from there they can no longer be
-        gathered back. So the ban comes before coding, not after."""
-
-        with self._project_lock:
-            store = self._project_store(create=False)
-            if store is None or not self._interview_id:
-                return {
-                    "ok": True,
-                    "allowed": False,
-                    "reason": t("api.interview_not_open"),
-                }
-            try:
-                state = store.anonymization_state(self._interview_id)
-            except Exception as error:
-                return {"ok": False, "error": str(error)[:400]}
-            return {
-                "ok": True,
-                "allowed": bool(state["done"]),
-                "reason": state["reason"],
-                "state": state,
-            }
-
-    # -- coding ----------------------------------------------------------
-
-    def coding_open(self):
-        """Everything the coding screen needs, in one request.
-
-        The anonymised text is used: that is what gets coded, quotes go off
-        into reports and tables, and a real name can no longer be pulled back
-        out of there. The codebook is shared across the series — codes are
-        created once per study, not afresh in every interview."""
-
-        with self._project_lock:
-            store = self._project_store(create=False)
-            if store is None or not self._interview_id:
-                return {"ok": True, "allowed": False, "reason": t("api.interview_not_open")}
-            try:
-                state = store.anonymization_state(self._interview_id)
-                turns = store.anonymized_turns(self._interview_id)
-                codings = store.codings(self._interview_id)
-                tally = store.coding_counts(self._interview_id)
-            except Exception as error:
-                return {"ok": False, "error": str(error)[:400]}
-
-        codes = self._codes(tally)
-        reason = state["reason"]
-        allowed = bool(state["done"]) and bool(turns)
-        if state["done"] and not turns:
-            reason = t("api.no_coding_text")
-        return {
-            "ok": True,
-            "allowed": allowed,
-            "reason": reason,
-            "turns": turns,
-            "moderator": self._moderator_speaker(),
-            "codings": codings,
-            "codes": codes,
-            "counts": tally,
-        }
 
     def cleanup_preview(self):
         """What would be left of the non-anonymised text if it were removed.
@@ -2864,201 +2798,6 @@ class AppApi:
             except OSError:
                 continue
         return {"ok": True, "removed": deleted, "inside": removed}
-
-    def _moderator_speaker(self):
-        """Who asks the questions. Their turns are visible, but cannot be coded."""
-
-        store = self._project_store(create=False)
-        if store is None or not self._interview_id:
-            return None
-        try:
-            state = store.load(self._interview_id) or {}
-        except Exception:
-            return None
-        value = state.get("moderator_speaker")
-        return int(value) if value is not None else None
-
-    def _codes(self, counts=None):
-        """The codebook in the form the window expects it.
-
-        Only what fits into json goes through the bridge to the window — so
-        the codes become dictionaries here instead of staying objects."""
-
-        with self._study_lock:
-            store = self._study_store(create=False)
-            if store is None:
-                return []
-            try:
-                codes = store.codes(self._study_id)
-            except Exception:
-                return []
-        count = counts or {}
-        return [code.as_dict(uses=int(count.get(code.id, 0))) for code in codes]
-
-    def coding_add(self, marking):
-        """Marks a piece of a turn with a code.
-
-        A refusal comes with a reason rather than silently: the interviewer's
-        question or non-anonymised text cannot be coded, and the person
-        must understand why the button didn't work."""
-
-        data = marking if isinstance(marking, dict) else {}
-        with self._project_lock:
-            store = self._project_store(create=False)
-            if store is None or not self._interview_id:
-                return {"ok": False, "error": t("api.interview_not_open")}
-            try:
-                state = store.anonymization_state(self._interview_id)
-                if not state["done"]:
-                    return {"ok": False, "error": state["reason"]}
-                turns = {
-                    turn["id"]: turn
-                    for turn in store.anonymized_turns(self._interview_id)
-                }
-                turn = turns.get(str(data.get("turn_id") or ""))
-                if turn is None:
-                    return {
-                        "ok": False,
-                        "error": t("api.turn_not_codable"),
-                    }
-                moderator = self._moderator_speaker()
-                if moderator is not None and turn["speaker"] == moderator:
-                    return {
-                        "ok": False,
-                        "error": t("api.interviewer_turn"),
-                    }
-                identifier = store.save_coding(
-                    self._interview_id,
-                    turn_id=turn["id"],
-                    start=int(data.get("start") or 0),
-                    end=int(data.get("end") or 0),
-                    code_id=str(data.get("code_id") or ""),
-                    memo=str(data.get("memo") or ""),
-                    coder=str(data.get("coder") or ""),
-                    coding_id=str(data.get("id") or ""),
-                )
-                return {
-                    "ok": True,
-                    "id": identifier,
-                    "codings": store.codings(self._interview_id),
-                    "counts": store.coding_counts(self._interview_id),
-                }
-            except ProjectError as error:
-                return {"ok": False, "error": str(error)}
-            except Exception as error:
-                return {"ok": False, "error": str(error)[:400]}
-
-    def coding_remove(self, coding_id):
-        with self._project_lock:
-            store = self._project_store(create=False)
-            if store is None or not self._interview_id:
-                return {"ok": False, "error": t("api.interview_not_open")}
-            try:
-                store.remove_coding(str(coding_id))
-                return {
-                    "ok": True,
-                    "codings": store.codings(self._interview_id),
-                    "counts": store.coding_counts(self._interview_id),
-                }
-            except Exception as error:
-                return {"ok": False, "error": str(error)[:400]}
-
-    def code_save(self, name, definition="", code_id=""):
-        """Creates a code in the study's codebook.
-
-        Nesting is expressed with a dot in the name — «деньги.нехватка»
-        ("money.shortage"): no separate tree had to be set up, and a whole
-        branch can be renamed in a single action."""
-
-        with self._study_lock:
-            store = self._study_store()
-            if store is None:
-                return {"ok": False, "error": t("api.choose_study_first")}
-            try:
-                identifier = store.save_code(
-                    self._study_id,
-                    str(name or ""),
-                    definition=str(definition or ""),
-                    origin="рука",
-                    code_id=str(code_id or ""),
-                )
-            except StudyError as error:
-                return {"ok": False, "error": str(error)}
-            except Exception as error:
-                return {"ok": False, "error": str(error)[:400]}
-            return {"ok": True, "id": identifier, "codes": self._codes()}
-
-    def code_rename(self, code_id, name):
-        with self._study_lock:
-            store = self._study_store(create=False)
-            if store is None:
-                return {"ok": False, "error": t("api.study_not_open")}
-            try:
-                store.rename_code(self._study_id, str(code_id), str(name or ""))
-            except StudyError as error:
-                return {"ok": False, "error": str(error)}
-            except Exception as error:
-                return {"ok": False, "error": str(error)[:400]}
-        return {"ok": True, "codes": self._codes()}
-
-    def code_merge(self, source_id, target_id):
-        """Merges two codes and carries over the markup already made."""
-
-        with self._study_lock:
-            store = self._study_store(create=False)
-            if store is None:
-                return {"ok": False, "error": t("api.study_not_open")}
-            try:
-                store.merge_codes(self._study_id, str(source_id), str(target_id))
-            except Exception as error:
-                return {"ok": False, "error": str(error)[:400]}
-        with self._project_lock:
-            project = self._project_store(create=False)
-            moved = 0
-            if project is not None and self._interview_id:
-                try:
-                    moved = project.move_codings(
-                        self._interview_id, str(source_id), str(target_id)
-                    )
-                except Exception:
-                    moved = 0
-            return {
-                "ok": True,
-                "codes": self._codes(),
-                "moved": moved,
-                "codings": project.codings(self._interview_id) if project else [],
-                "counts": project.coding_counts(self._interview_id) if project else {},
-            }
-
-    def code_remove(self, code_id):
-        """Removes a code. The markup made with it has to be removed too."""
-
-        with self._project_lock:
-            project = self._project_store(create=False)
-            if project is not None and self._interview_id:
-                try:
-                    for coding in project.codings(
-                        self._interview_id, code_id=str(code_id)
-                    ):
-                        project.remove_coding(coding["id"])
-                except Exception:
-                    pass
-        with self._study_lock:
-            store = self._study_store(create=False)
-            if store is None:
-                return {"ok": False, "error": t("api.study_not_open")}
-            try:
-                store.remove_code(self._study_id, str(code_id))
-            except Exception as error:
-                return {"ok": False, "error": str(error)[:400]}
-        with self._project_lock:
-            project = self._project_store(create=False)
-            return {
-                "ok": True,
-                "codes": self._codes(),
-                "codings": project.codings(self._interview_id) if project else [],
-                "counts": project.coding_counts(self._interview_id) if project else {},
-            }
 
     def project_open(self, path=""):
         """Opens the work on an interview whose recording no longer exists.

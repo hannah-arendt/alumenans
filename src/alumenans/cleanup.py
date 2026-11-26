@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """Clearing away the non-anonymised text once it is no longer needed.
 
-Anonymisation is finished, the file is saved, and next comes coding. From
+Anonymisation is finished and the file is saved. From
 this point on the original text serves no work at all, yet it carries as
 much risk as it did on day one: real names, the town, places of work.
 There is no reason to keep it any longer.
