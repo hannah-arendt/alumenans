@@ -230,12 +230,17 @@ class TurnEditTests(unittest.TestCase):
                 apply(self.two_turns(), SplitTurn(1, at))
 
     def test_a_merge_keeps_the_first_turn(self):
-        after, _ = apply(self.two_turns(), MergeTurns(1))
+        one_speaker, _ = apply(self.two_turns(), SetSpeaker(2, 1))
+        after, _ = apply(one_speaker, MergeTurns(1))
         validate(after)
         self.assertEqual(
             [(turn.id, turn.speaker, turn.text) for turn in after.turns],
             [(1, 1, "раз два три четыре пять")],
         )
+
+    def test_turns_by_different_speakers_are_not_merged(self):
+        with self.assertRaisesRegex(EditError, "different speakers"):
+            apply(self.two_turns(), MergeTurns(1))
 
     def test_split_then_merge_gives_the_same_words_back(self):
         before = self.two_turns()
@@ -609,7 +614,10 @@ class AnySequenceOfEditsTests(unittest.TestCase):
                         try:
                             transcript, mapping = apply(before, MergeTurns(turn.id))
                         except EditError:
-                            self.assertLess(following.words[0].start, turn.words[-1].start)
+                            self.assertTrue(
+                                following.speaker != turn.speaker
+                                or following.words[0].start < turn.words[-1].start
+                            )
                             continue
                         self.assertEqual(
                             transcript.turn(turn.id).words, turn.words + following.words

@@ -86,7 +86,7 @@ class InterviewStoreTests(unittest.TestCase):
     def test_going_back_to_an_earlier_version_is_a_save_too(self):
         machine = machine_transcript()
         self.store.create(machine)
-        edited, _ = apply(machine, MergeTurns(2))
+        edited, _ = apply(machine, SplitTurn(2, 2))
         self.store.save(edited, machine)
         self.store.save(machine, edited)
         self.assertEqual(self.reopened().load(), machine)

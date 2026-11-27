@@ -76,8 +76,8 @@ class SplitTurn:
 
 @dataclass(frozen=True, slots=True)
 class MergeTurns:
-    """Joins a turn with the one after it. The result keeps the first
-    turn's identifier and speaker."""
+    """Joins a turn with the one after it, which must be by the same
+    speaker. The result keeps the first turn's identifier."""
 
     turn: TurnId
 
@@ -157,6 +157,8 @@ def apply(transcript: Transcript, edit: Edit) -> tuple[Transcript, Mapping]:
             if index + 1 >= len(turns):
                 raise EditError(f"turn {turn.id} is the last one")
             following = turns[index + 1]
+            if following.speaker != turn.speaker:
+                raise EditError(f"turns {turn.id} and {following.id} have different speakers")
             if following.words[0].start < turn.words[-1].start:
                 # The next turn began while this one was still going: its
                 # words cannot simply be put after this one's.
