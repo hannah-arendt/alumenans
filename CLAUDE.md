@@ -52,7 +52,7 @@ Releases (`.github/workflows/release.yml`) are started by hand from the Actions 
 ## Architecture
 
 **Shell (`app.py`, `launch.py`, `server.py`, `api.py`).** `app.main()` starts a `ThreadingHTTPServer` on 127.0.0.1 and a pywebview window that shows `resources/anonymizer.html`. `launch.py` prepares the start (build check, model download, setup window), `server.py` holds the HTTP `Handler`, `api.py` holds `AppApi`, and `current_audio.py` holds the open recording that both of them use. The single-file HTML holds the whole UI: transcription, proofreading and anonymization tabs. The UI reaches Python in two ways:
-- **HTTP endpoints on `Handler`** for stateless text analysis: `/analyze`, `/inflect`, `/known-words`, `/guide-report`, `/warmup`, `/health`, plus the UI catalog script `/i18n.js` and audio serving with byte ranges.
+- **HTTP endpoints on `Handler`** for stateless text analysis: `/analyze`, `/inflect`, `/known-words`, `/warmup`, `/health`, plus the UI catalog script `/i18n.js` and audio serving with byte ranges.
 - **`AppApi`, exposed as `window.pywebview.api`**, for stateful operations: picking media, transcription jobs, the open interview (its transcript, every edit to it, and the proofreading checks), study files, and saving txt, docx or encrypted key archives.
 
 A separate setup-window process shows progress while `prepare_launch()` downloads models. It closes when the UI calls `mark_interface_ready`. If a module listed in `dependencies.py` is missing, launch stops with an "incomplete build" message (`is_incomplete_build()` recognizes it in either UI language). Nothing is installed at runtime.
@@ -70,7 +70,7 @@ A separate setup-window process shows progress while `prepare_launch()` download
 - `exchange.py`: a file-based boundary with the shared environment. A study file comes in and anonymized exports go out. It must never make network calls.
 - `secret_zip.py`: an AES-256 WinZip-compatible zip for the anonymization key, built with stdlib only.
 
-**Guide (`guide/`):** `parse.py` turns the interview guide into structured questions and branches, `align.py` matches the transcript against it, `report.py` reports coverage, and `speakers.py` uses it to tell the interviewer from the respondent. The parsing does not trust question numbers, separates read-aloud text from interviewer prompts, and skips branches that were not taken.
+**Guide (`guide/`):** `parse.py` turns the interview guide into structured questions and branches, `align.py` matches the transcript against it, and `speakers.py` uses it to tell the interviewer from the respondent. The parsing does not trust question numbers, separates read-aloud text from interviewer prompts, and skips branches that were not taken.
 
 ## Conventions and gotchas
 

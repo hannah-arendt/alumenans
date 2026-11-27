@@ -160,13 +160,6 @@ class SnapshotTests(TemporaryCorpus):
         self.assertEqual(len(output["turns"]), 3)
         self.assertEqual(output["turns"][1]["text"], "Меня зовут Мария.")
 
-    def test_the_guide_stage_is_skipped_without_a_guide(self):
-        case = make_case(self.root, audio="a.m4a")
-        give_transcript(case, TURNS)
-        with self.assertRaises(corpus.StageUnavailable):
-            corpus.run_stage(case, "guide")
-
-
 REFERENCE = """\
 [00:00] Спикер 1: Расскажите, пожалуйста, о себе.
 [00:04] Спикер 2: Меня зовут {{person:Мария}}. Я живу в {{place:Казани}},
@@ -281,9 +274,6 @@ class CorpusTests(unittest.TestCase):
 
     def test_detection(self):
         self._check_stage("detection")
-
-    def test_guide(self):
-        self._check_stage("guide")
 
     def test_metrics_are_no_worse_than_the_baseline(self):
         for case in self.cases:

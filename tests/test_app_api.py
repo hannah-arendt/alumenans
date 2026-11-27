@@ -137,11 +137,18 @@ class AppApiTests(unittest.TestCase):
         # Cleanup was applied to the fresh transcription.
         self.assertEqual(self.texts(created["state"]), ["Как вас зовут?", "Меня зовут Анна…"])
         self.assertEqual(call(self.api.interview_save_context, "Another guide.", "")["ok"], True)
+        self.assertEqual(call(self.api.interview_set_topic, 2, True, "Name")["ok"], True)
         loaded = call(self.api.interview_load)
         self.assertEqual(loaded["path"], created["path"])
         self.assertEqual(
             {key: value for key, value in loaded["state"].items() if key != "transcript"},
-            {"recording": "interview.m4a", "duration": 20.0, "guide": "Another guide.", "notes": ""},
+            {
+                "recording": "interview.m4a",
+                "duration": 20.0,
+                "guide": "Another guide.",
+                "notes": "",
+                "topics": [{"turn": 2, "shown": True, "title": "Name"}],
+            },
         )
         self.assertEqual(self.texts(loaded["state"]), ["Как вас зовут?", "Меня зовут Анна…"])
 

@@ -189,6 +189,19 @@ class InterviewStoreTests(unittest.TestCase):
         self.assertEqual(store.key_archive(), b"PK-encrypted")
         self.assertEqual(store.details(), Details("recording.mp3", 40.0))
 
+    def test_topic_marks_are_kept_until_the_next_transcription(self):
+        self.store.create(machine_transcript(), DETAILS)
+        self.assertEqual(self.store.topic_marks(), [])
+        self.store.save_topic_mark(3, True, "")
+        self.store.save_topic_mark(2, False, "")
+        self.store.save_topic_mark(3, True, "Work")
+        self.assertEqual(
+            self.reopened().topic_marks(),
+            [{"turn": 2, "shown": False, "title": ""}, {"turn": 3, "shown": True, "title": "Work"}],
+        )
+        self.store.create(machine_transcript(), DETAILS)
+        self.assertEqual(self.store.topic_marks(), [])
+
     def test_the_summary_for_the_list_of_interviews(self):
         self.store.connect()
         self.assertIsNone(summarize(self.path, self.secret))  # no interview in it

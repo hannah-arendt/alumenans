@@ -237,6 +237,7 @@ class AppApi:
             "duration": details.duration,
             "guide": details.guide,
             "notes": details.notes,
+            "topics": store.topic_marks(),
             "transcript": self._interview.view(),
         }
 
@@ -397,6 +398,19 @@ class AppApi:
         except Exception as error:
             return _failed(error)
         return {"ok": True, "revision": transcript.revision, **found}
+
+    def interview_set_topic(self, turn_id, shown, title=""):
+        """Saves the person's word on whether a new topic begins at a turn,
+        and what it is called."""
+
+        with self._interview_lock:
+            if self._interview is None:
+                return {"ok": False, "error": t("api.no_project")}
+            try:
+                self._interview_store.save_topic_mark(int(turn_id), bool(shown), str(title or ""))
+            except Exception as error:
+                return _failed(error)
+            return {"ok": True}
 
     def interview_mark_anonymized(self, left=0, turns=None):
         """Records that anonymization was carried through, with the

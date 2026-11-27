@@ -611,43 +611,6 @@ button.primary:hover:not(:disabled){background:#000}
 
 /* Subject of the study: the only place where the program says "this
    data need not be hidden", so the list is shown in full and with its source. */
-/* Guide coverage: a list of questions with status, time and a jump link. */
-.coverage-line{font-size:12px; color:var(--ink-soft); padding:3px 0}
-.coverage-faint{color:var(--ink-faint)}
-.coverage-group{
-  margin-top:11px; padding-top:7px; border-top:1px solid var(--rule-soft);
-  font:600 10.5px/1.3 var(--mono); color:var(--ink-soft);
-  text-transform:uppercase; letter-spacing:.06em;
-}
-.coverage-row{
-  display:grid; grid-template-columns:14px 22px 44px 1fr; gap:6px;
-  align-items:baseline; width:100%; text-align:left; padding:5px 2px;
-  border:none; background:none; cursor:pointer; font:inherit;
-  border-bottom:1px solid var(--rule-soft);
-}
-.coverage-row:hover:not(:disabled){background:#35528A0D}
-.coverage-row:disabled{cursor:default; opacity:.75}
-.coverage-sign{font:600 12px/1.3 var(--mono); color:var(--contact)}
-.coverage-number{font:11px/1.3 var(--mono); color:var(--ink-soft)}
-.coverage-row time{font:10.5px/1.35 var(--mono); color:var(--ink-faint)}
-.coverage-text{
-  font:12.5px/1.4 var(--serif); color:var(--ink);
-  overflow:hidden; display:-webkit-box; -webkit-line-clamp:2;
-  -webkit-box-orient:vertical;
-}
-.coverage-row:disabled .coverage-text{color:var(--ink-faint)}
-.coverage-section{
-  display:grid; grid-template-columns:44px 1fr auto; gap:6px;
-  align-items:baseline; padding:4px 2px; font-size:11.5px; color:var(--ink-soft);
-}
-.coverage-section time{font:10.5px/1.35 var(--mono); color:var(--ink-faint)}
-.coverage-plan{font:10.5px/1.35 var(--mono); white-space:nowrap}
-.coverage-plan.off{color:var(--contact)}
-.coverage-note{padding:4px 2px; font-size:11.5px; color:var(--contact)}
-.coverage-legend{
-  margin-top:9px; font-size:10.5px; line-height:1.5; color:var(--ink-faint);
-}
-
 .subject-note{margin:0 0 9px; font-size:11.5px; color:var(--ink-soft)}
 .subject-row{
   display:grid; grid-template-columns:auto 1fr auto; gap:5px 8px;
@@ -1092,16 +1055,6 @@ kbd{
         <section class="proof-review-panel">
           <div id="proofIssues"></div>
         </section>
-
-        <details class="proof-panel-details" id="proofCoveragePanel">
-          <summary>
-            <span data-i18n="proof.coverage"></span>
-            <span class="proof-panel-count" id="proofCoverageCount">—</span>
-          </summary>
-          <div class="proof-details-body">
-            <div id="proofCoverage"></div>
-          </div>
-        </details>
 
         <details class="proof-panel-details">
           <summary>
@@ -2473,7 +2426,6 @@ async function resetTranscription(){
   PROJECT.creating = null;
   PROJECT.path = "";
   PROJECT.candidate = null;
-  clearTimeout(PROJECT.saveTimer);
   renderResumePrompt();
   attachProofAudio("");
   resetProofreading();
@@ -2542,9 +2494,6 @@ const PROJECT = {
   path:"",
   state:null,
   creating:null,
-  saveTimer:null,
-  saving:false,
-  again:false,
   error:"",
   candidate:null
 };
@@ -2557,7 +2506,6 @@ function takeTranscript(change){
     const old = turns.get(turn.id) || {};
     turns.set(turn.id, {
       topic_start:old.topic_start,
-      topic_reason:old.topic_reason,
       topic_title:old.topic_title,
       ...turn,
       text:turn.words.map(word => word.text).join(" ")
@@ -2639,31 +2587,10 @@ async function createProject(){
   }
 }
 
-async function saveProjectNow(){
-  if (!PROJECT.ready) return;
-  if (PROJECT.saving){
-    PROJECT.again = true;
-    return;
-  }
-  PROJECT.saving = true;
-  try {
-    const saved = await appCall("interview_save_context", PROOF.guide, PROOF.notes);
-    PROJECT.error = saved.ok ? "" : (saved.error || "");
-  } catch (error){
-    PROJECT.error = error.message || String(error);
-  } finally {
-    PROJECT.saving = false;
-    if (PROJECT.again){
-      PROJECT.again = false;
-      void saveProjectNow();
-    }
-  }
-}
-
-function scheduleProjectSave(){
-  if (!PROJECT.ready) return;
-  clearTimeout(PROJECT.saveTimer);
-  PROJECT.saveTimer = setTimeout(() => void saveProjectNow(), 1200);
+/* The guide and notes the person wrote for this interview are saved as
+   soon as the window notices they changed. */
+function saveContext(){
+  if (PROJECT.ready) void appCall("interview_save_context", PROOF.guide, PROOF.notes);
 }
 
 function renderResumePrompt(){
@@ -2681,11 +2608,20 @@ async function lookForSavedProject(){
     if (found.ok && found.state){
       PROJECT.candidate = found.state;
       PROJECT.path = found.path || "";
+      showSavedContext(found.state);
     }
   } catch (error){
     PROJECT.candidate = null;
   }
   renderResumePrompt();
+}
+
+/* The guide and notes saved with an interview go into their fields as soon
+   as the interview is found. Where nothing was saved, the field keeps what
+   the study's documents put there. */
+function showSavedContext(state){
+  if (state.guide) $("interviewGuide").value = state.guide;
+  if (state.notes) $("interviewNotes").value = state.notes;
 }
 
 function resumeSavedProject(){
@@ -2697,8 +2633,15 @@ function resumeSavedProject(){
   PROOF.guide = state.guide;
   PROOF.notes = state.notes;
   takeTranscript(state.transcript);
-  $("interviewGuide").value = PROOF.guide;
-  $("interviewNotes").value = PROOF.notes;
+  for (const mark of state.topics){
+    PROOF.topicOverrides.set(mark.turn, mark.shown);
+    const turn = PROOF.turns.find(item => item.id === mark.turn);
+    if (turn){
+      turn.topic_start = mark.shown;
+      turn.topic_title = mark.title;
+    }
+  }
+  showSavedContext(state);
   PROJECT.ready = true;
   PROJECT.state = state;
   PROJECT.candidate = null;
@@ -3199,6 +3142,7 @@ function syncProofNotes(){
   PROOF.dirty = true;
   PROOF.notesDirty = true;
   PROOF.emailError = "";
+  saveContext();
   return true;
 }
 
@@ -3209,6 +3153,7 @@ function syncProofGuide(){
   PROOF.dirty = true;
   PROOF.guideDirty = true;
   PROOF.emailError = "";
+  saveContext();
   return true;
 }
 
@@ -3248,8 +3193,8 @@ function proofTurnArticle(turn, index){
               >${tr("speaker.n", {n: number})}</option>`).join("")}
           </select>
           <div class="proof-time">${formatClock(turn.start)}</div>
-          ${index ? `<button class="proof-topic-toggle ${topic ? "on" : ""}"
-                  data-topic-toggle>${topic ? tr("proof.remove_timecode") : tr("proof.timecode")}</button>` : ""}
+          <button class="proof-topic-toggle ${topic ? "on" : ""}"
+                  data-topic-toggle>${topic ? tr("proof.remove_timecode") : tr("proof.timecode")}</button>
           ${PLAYER.available ? `<div class="proof-turn-sound">
             <button class="proof-listen-turn" data-listen-turn
                   title="${tr("proof.listen_turn")}" aria-label="${tr("proof.listen_turn")}"
@@ -3266,7 +3211,7 @@ function proofTurnArticle(turn, index){
             <span>[${formatClock(turn.start)}]</span>
             <input class="proof-topic-title" data-topic-title="${escAttr(turn.id)}"
                    value="${escAttr(turn.topic_title || "")}"
-                   placeholder="${escAttr(suggestTopicTitle(turn) || tr("proof.topic_placeholder"))}"
+                   placeholder="${escAttr(tr("proof.topic_placeholder"))}"
                    spellcheck="false" autocomplete="off">
           </div>` : ""}
           <div class="proof-turn-text" contenteditable="true" role="textbox"
@@ -3387,7 +3332,7 @@ function renderProofTopics(){
   $("proofTopics").innerHTML = topics.map(({turn, index}) => `
     <button class="proof-topic-row" data-show-turn="${index}">
       <time>[${formatClock(turn.start)}]</time>
-      <span>${esc(turn.text)}</span>
+      <span>${esc(turn.topic_title || turn.text)}</span>
     </button>
   `).join("");
 }
@@ -3481,7 +3426,6 @@ async function runProofreading(quiet = false){
     PROOF.notesDirty = false;
     PROOF.guideDirty = false;
     keepingScroll(renderProof);
-    if (!quiet) void runCoverage();
     return true;
   } catch (error) {
     PROOF.loading = false;
@@ -3917,6 +3861,8 @@ function bindTopicTitles(){
       const turn = PROOF.turns.find(turnItem => String(turnItem.id) === field.dataset.topicTitle);
       if (!turn) return;
       turn.topic_title = field.value.trim();
+      void appCall("interview_set_topic", turn.id, true, turn.topic_title);
+      renderProofTopics();
     };
   });
 }
@@ -3942,148 +3888,6 @@ function newWordsText(){
   const words = [...PROOF.newWords.values()]
     .sort((left, right) => left.localeCompare(right, "ru"));
   return words.length ? `${words.join("\n")}\n` : "";
-}
-
-/* ---------- guide coverage ---------- */
-
-/* An interview mostly follows the guide in order, so the guide is aligned
-   against the turns as a whole rather than searched for question by question. That is where
-   the answer to "what of the plan was covered, and where" comes from. */
-
-const COVERAGE = {report:null, loading:false, error:"", guide:""};
-
-const COVERAGE_MARK = {
-  "прозвучал":         {sign:"", get title(){ return tr("coverage.asked"); }},
-  "вероятно":          {sign:"?", get title(){ return tr("coverage.likely"); }},
-  "вместе с соседним": {sign:"+", get title(){ return tr("coverage.with_neighbour"); }},
-  "не по порядку":     {sign:"~", get title(){ return tr("coverage.out_of_order"); }},
-  "не прозвучал":      {sign:"—", get title(){ return tr("coverage.missing"); }}
-};
-
-/* The topic name needn't be made up: the guide knows which block comes at this
-   time. The program offers it as a suggestion — the person types it in. */
-function suggestTopicTitle(turn){
-  const sections = (COVERAGE.report && COVERAGE.report.sections) || [];
-  const turnTime = Number(turn.start) || 0;
-  let matching = "";
-  for (const section of sections){
-    if (Number(section.start) <= turnTime + 0.5) matching = section.section || "";
-    else break;
-  }
-  return matching;
-}
-
-function renderCoverage(){
-  const holder = $("proofCoverage");
-  const counter = $("proofCoverageCount");
-  if (COVERAGE.loading){
-    counter.textContent = "…";
-    holder.innerHTML = `<div class="proof-issues-empty">${tr("coverage.checking")}</div>`;
-    return;
-  }
-  if (COVERAGE.error){
-    counter.textContent = "—";
-    holder.innerHTML = `<div class="proof-issues-empty">${esc(COVERAGE.error)}</div>`;
-    return;
-  }
-  const report = COVERAGE.report;
-  if (!report || report.empty){
-    counter.textContent = "—";
-    holder.innerHTML =
-      `<div class="proof-issues-empty">${tr("coverage.add_guide")}</div>`;
-    return;
-  }
-
-  const stats = report.stats || {};
-  counter.textContent = `${stats.asked || 0}/${stats.questions || 0}`;
-  const questions = (report.items || []).filter(item => item.kind === "question");
-
-  const rows = questions.map(item => {
-    const mark = COVERAGE_MARK[item.state] || COVERAGE_MARK["не прозвучал"];
-    const clickable = Number.isInteger(item.turn_index);
-    return `
-      <button class="coverage-row ${clickable ? "" : "flat"}"
-              ${clickable ? `data-show-turn="${item.turn_index}"` : "disabled"}
-              title="${escAttr(mark.title)}">
-        <span class="coverage-sign">${esc(mark.sign)}</span>
-        <span class="coverage-number">${item.number ? item.number + "." : "·"}</span>
-        <time>${item.time === null ? "" : formatClock(item.time)}</time>
-        <span class="coverage-text">${esc(item.text)}</span>
-      </button>`;
-  }).join("");
-
-  const branch = report.branch
-    ? `<div class="coverage-line">${tr("coverage.branch")} <b>${esc(report.branch)}. ${esc(report.branch_title)}</b></div>`
-    : "";
-  const unplanned = (report.unplanned || []).length
-    ? `<div class="coverage-group">${tr("coverage.unplanned")}</div>` + report.unplanned.map(entry => `
-        <button class="coverage-row" data-show-turn="${entry.turn_index}">
-          <span class="coverage-sign">!</span><span class="coverage-number"></span>
-          <time>${formatClock(entry.time)}</time>
-          <span class="coverage-text">${esc(entry.text)}</span>
-        </button>`).join("")
-    : "";
-  const sections = (report.sections || []).length
-    ? `<div class="coverage-group">${tr("coverage.sections")}</div>` + report.sections.map(row => `
-        <div class="coverage-section">
-          <time>${formatClock(row.start)}</time>
-          <span>${esc(row.section)}</span>
-          <span class="coverage-plan ${row.verdict === "по плану" ? "" : "off"}">
-            ${tr("coverage.minutes", {n: (row.actual_seconds / 60).toFixed(1)})}${
-              row.planned_from
-                ? ` · ${tr("coverage.plan", {from: row.planned_from / 60, to: row.planned_to / 60})}`
-                : ""}
-          </span>
-        </div>`).join("")
-    : "";
-  const problems = (report.guide_problems || []).length
-    ? `<div class="coverage-group">${tr("coverage.guide_problems")}</div>` +
-      report.guide_problems.map(text => `<div class="coverage-note">${esc(text)}</div>`).join("")
-    : "";
-
-  holder.innerHTML = `
-    <div class="coverage-line">
-      ${tr("coverage.interviewer")} <b>${tr("speaker.n", {n: report.moderator})}</b>
-      <span class="coverage-faint">${tr("coverage.confidence", {n: Math.round(
-        (report.moderator_confidence || 0) * 100)})}</span>
-    </div>
-    ${branch}
-    <div class="coverage-line">
-      ${tr("coverage.stats", {asked: stats.asked || 0, total: stats.questions || 0, sure: stats.confident || 0})}
-    </div>
-    ${rows}${unplanned}${sections}${problems}
-    <div class="coverage-legend">
-      ${tr("coverage.legend")}
-    </div>`;
-}
-
-async function runCoverage(){
-  const guide = PROOF.guide || $("interviewGuide").value.trim();
-  if (!guide || !PROOF.turns.length){
-    COVERAGE.report = null;
-    renderCoverage();
-    return;
-  }
-  COVERAGE.loading = true;
-  COVERAGE.error = "";
-  renderCoverage();
-  try {
-    const response = await localFetch("/guide-report", {
-      method:"POST",
-      headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({guide, turns:PROOF.turns})
-    });
-    const payload = await response.json();
-    if (!response.ok || payload.error) throw new Error(payload.error || tr("error.failed"));
-    COVERAGE.report = payload;
-    COVERAGE.guide = guide;
-  } catch (error){
-    COVERAGE.report = null;
-    COVERAGE.error = error.message || String(error);
-  } finally {
-    COVERAGE.loading = false;
-    renderCoverage();
-  }
 }
 
 /* ---------- study ---------- */
@@ -4642,12 +4446,11 @@ $("proofTurns").addEventListener("click", event => {
   const turn = PROOF.turns[turnIndexOf(button)];
   if (!turn) return;
   turn.topic_start = !turn.topic_start;
-  turn.topic_reason = turn.topic_start ? "выбрано пользователем" : null;
   PROOF.topicOverrides.set(turn.id, turn.topic_start);
+  void appCall("interview_set_topic", turn.id, turn.topic_start, turn.topic_title || "");
   // The button sets a timecode — and nothing else. It must not take the person away
   // from the place where they are working.
   keepingScroll(renderProof);
-  scheduleProjectSave();
 });
 $("proofIssues").addEventListener("click", event => {
   const button = event.target.closest("[data-proof-action]");
@@ -4711,18 +4514,6 @@ $("proofTopics").addEventListener("click", event => {
   const row = event.target.closest("[data-show-turn]");
   if (!row) return;
   showProofTurn(Number(row.dataset.showTurn));
-});
-$("proofCoverage").addEventListener("click", event => {
-  const row = event.target.closest("[data-show-turn]");
-  if (!row) return;
-  const index = Number(row.dataset.showTurn);
-  const editor = PROOF.turns[index] ? editorOfTurn(PROOF.turns[index].id) : null;
-  document.querySelectorAll(".proof-turn.focused")
-    .forEach(element => element.classList.remove("focused"));
-  if (editor){
-    editor.closest(".proof-turn").classList.add("focused");
-    centerInProof(editor);
-  }
 });
 $("btnDismissNewWords").onclick = () => {
   PROOF.newWordsPromptDismissed = true;
@@ -4801,7 +4592,7 @@ function rerenderForLanguage(){
   ];
   if (PROOF.turns.length){
     views.push(renderProofStatus, renderProofIssues, renderProofTopics, renderProofSummary,
-               renderCoverage, () => { renderProofTurns(); bindTopicTitles(); });
+               () => { renderProofTurns(); bindTopicTitles(); });
   }
   for (const render of views){
     try { render(); } catch (error) { console.error(error); }
@@ -4814,7 +4605,6 @@ function rerenderForLanguage(){
 async function refreshProofMessages(){
   if (!PROOF.turns.length || PROOF.loading || PROOF.dirty) return;
   await runProofreading(true);
-  if (COVERAGE.report) void runCoverage();
 }
 
 async function switchUiLanguage(code, {remember = true} = {}){

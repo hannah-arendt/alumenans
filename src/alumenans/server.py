@@ -273,36 +273,6 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200, json.dumps({"known": known}, ensure_ascii=False))
             return
 
-        if self.path == "/guide-report":
-            # The guide knows the order of the conversation. Alignment turns
-            # that knowledge into an answer to the question "which of the
-            # planned topics actually came up".
-            length = int(self.headers.get("Content-Length") or 0)
-            if length > LIMIT:
-                self._send(413, json.dumps({"error": t("http.transcript_too_large")}))
-                return
-            try:
-                from alumenans.guide.report import build_report
-
-                request = json.loads(self.rfile.read(length).decode("utf-8"))
-                guide_text = str(request.get("guide") or "").strip()
-                if not guide_text:
-                    self._send(200, json.dumps({"empty": True}, ensure_ascii=False))
-                    return
-                report = build_report(guide_text, request.get("turns") or [])
-            except Exception as error:
-                log.exception("%s failed", self.path)
-                self._send(
-                    500,
-                    json.dumps(
-                        {"error": str(error)[:600] or type(error).__name__},
-                        ensure_ascii=False,
-                    ),
-                )
-                return
-            self._send(200, json.dumps(report, ensure_ascii=False))
-            return
-
         if self.path != "/analyze":
             self._send(404, json.dumps({"error": t("http.not_found")}))
             return

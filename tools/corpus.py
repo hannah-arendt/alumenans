@@ -460,20 +460,10 @@ def stage_detection(case: Case, transcript: dict) -> dict:
     return detect(case, transcript["turns"])
 
 
-def stage_guide(case: Case, transcript: dict) -> dict:
-    from alumenans.guide.report import build_report
-
-    guide = case.guide.strip()
-    if not guide:
-        raise StageUnavailable(f"{case.name}: the case has no guide.")
-    return build_report(guide, transcript["turns"])
-
-
 STAGES = {
     "transcript": stage_transcript,
     "proofreading": stage_proofreading,
     "detection": stage_detection,
-    "guide": stage_guide,
 }
 
 

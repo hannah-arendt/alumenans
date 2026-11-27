@@ -265,7 +265,7 @@ in installed builds, add a check there.
 │        ▼                              ▼                                          │
 │     AppApi (stateful)           Handler on ThreadingHTTPServer (stateless)       │
 │     media, jobs, projects,      /analyze /inflect /known-words                   │
-│     study, export               /guide-report /warmup /health, audio ranges      │
+│     study, export               /warmup /health, audio ranges                    │
 │        │                              │                                          │
 │        │                              └─▶ anonymization: GLiNER, Natasha,        │
 │        │                                  pymorphy3, dictionary, heuristics      │
@@ -369,7 +369,6 @@ All of it uses SQLite and the standard library only.
   aloud apart from prompts meant for the interviewer.
 - `align.py`: matches the transcript against the guide and skips branches
   that weren't taken.
-- `report.py`: reports how much of the guide the interview covered.
 - `speakers.py`: uses the guide to tell the interviewer from the
   respondent.
 
@@ -388,7 +387,7 @@ src/alumenans/            the package
   self_test.py            --self-test checks
   transcription/          worker process, its manager, model-free core logic
   storage/                SQLite project/study stores, exchange, encrypted zip
-  guide/                  interview-guide parsing, alignment, coverage, speakers
+  guide/                  interview-guide parsing, alignment, speakers
   resources/              anonymizer.html (UI), names dictionary, icons
 tests/                    unittest suite
 tools/                    evaluate.py (metrics), startup_check.py (diagnostics)

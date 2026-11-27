@@ -1,1 +1,1 @@
-"""Interview guide: parsing, matching against the transcript, report, speaker roles."""
+"""Interview guide: parsing, matching against the transcript, speaker roles."""

@@ -170,10 +170,8 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertNotIn('id="proofGuide"', HTML)
         self.assertNotIn('id="proofNotes"', HTML)
         rail = HTML.split('<div class="proof-rail-scroll">')[1].split("</aside>")[0]
-        self.assertIn('data-i18n="proof.coverage"', rail)
         self.assertIn('data-i18n="proof.topics"', rail)
         self.assertNotIn('data-i18n="notes.label"', rail)
-        self.assertEqual(RU["proof.coverage"], "Покрытие гайда")
         self.assertEqual(RU["proof.topics"], "Таймкоды тем")
 
     def test_first_screen_has_no_decorative_rules(self):
@@ -183,17 +181,6 @@ class WorkflowContractTests(unittest.TestCase):
         # Guide, programme and notes stand in one row, not one below another.
         self.assertIn('<div class="interview-context-row">', HTML)
         self.assertIn("grid-template-columns:repeat(3, minmax(0, 1fr))", HTML)
-
-    def test_guide_coverage_is_shown_in_the_rail(self):
-        self.assertIn('id="proofCoveragePanel"', HTML)
-        self.assertIn('localFetch("/guide-report"', HTML)
-        # The report is recomputed after every text check.
-        self.assertIn("void runCoverage();", HTML)
-        # The states of findings are distinguishable, not lumped into "yes / no".
-        for state in ("вероятно", "вместе с соседним", "не по порядку"):
-            self.assertIn(state, HTML)
-        # A question that wasn't found leads nowhere.
-        self.assertIn('${clickable ? "" : "flat"}', HTML)
 
     def test_every_request_to_the_local_server_carries_the_session(self):
         # The server refuses anything without this launch's secret.
@@ -360,8 +347,7 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertIn('appCall("interview_save_context", PROOF.guide, PROOF.notes)', HTML)
         self.assertIn('appCall("interview_load")', HTML)
         self.assertIn('id="btnResumeProject"', HTML)
-        # Autosave is called after every proofreading decision.
-        self.assertIn("scheduleProjectSave();", HTML)
+        self.assertIn('appCall("interview_set_topic", turn.id, turn.topic_start, turn.topic_title || "")', HTML)
 
     def test_new_words_go_to_the_study_dictionary_first(self):
         # A word gets into the program's shared dictionary in a new version, and only

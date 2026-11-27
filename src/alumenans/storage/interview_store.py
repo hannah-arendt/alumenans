@@ -32,7 +32,7 @@ from alumenans.storage.cipher import StudySecret
 # Two-part on purpose: the study file (".study.alumenans") shares the folder,
 # and no recording name can turn into it.
 INTERVIEW_SUFFIX = ".interview.alumenans"
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 SCHEMA = """
 CREATE TABLE meta (
@@ -82,6 +82,14 @@ CREATE TABLE interview (
     moderator INTEGER,        -- the interviewer's speaker number, if known
     guide     TEXT NOT NULL,
     notes     TEXT NOT NULL
+);
+
+-- Where the person says a new topic begins (shown = 1, with an optional
+-- title) or says it does not, against the program's suggestion (shown = 0).
+CREATE TABLE topic_marks (
+    turn_id INTEGER PRIMARY KEY,
+    shown   INTEGER NOT NULL,
+    title   TEXT NOT NULL
 );
 
 -- The text as it was when anonymization was last finished: the turns that
@@ -167,6 +175,7 @@ class InterviewStore:
             connection.execute("DELETE FROM turns")
             connection.execute("DELETE FROM document")
             connection.execute("DELETE FROM anonymized_transcript")
+            connection.execute("DELETE FROM topic_marks")
             connection.execute(
                 "INSERT OR REPLACE INTO interview VALUES (1, ?, ?, ?, ?, ?)",
                 (
@@ -242,6 +251,24 @@ class InterviewStore:
         connection = self.connect()
         with connection:
             connection.execute("UPDATE interview SET guide = ?, notes = ?", (guide, notes))
+
+    def save_topic_mark(self, turn_id: int, shown: bool, title: str) -> None:
+        connection = self.connect()
+        with connection:
+            connection.execute(
+                "INSERT OR REPLACE INTO topic_marks VALUES (?, ?, ?)", (turn_id, shown, title)
+            )
+
+    def topic_marks(self) -> list[dict]:
+        """The person's marks, each with `turn`, `shown` and `title`. A mark
+        on a turn that no longer exists is kept: undo may bring the turn back."""
+
+        return [
+            {"turn": turn_id, "shown": bool(shown), "title": title}
+            for turn_id, shown, title in self.connect().execute(
+                "SELECT turn_id, shown, title FROM topic_marks ORDER BY turn_id"
+            )
+        ]
 
     def save_anonymized(self, turns: list[dict], unresolved: int) -> None:
         """Keeps the anonymized turns, as they will be exported."""
