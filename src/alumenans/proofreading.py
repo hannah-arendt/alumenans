@@ -14,6 +14,8 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Iterable, Sequence
 
+from alumenans.document.editing import retext
+from alumenans.document.transcript import Author, Transcript, words_in_range
 from alumenans.paths import RESOURCES
 from alumenans.phonetics import phonetic_similarity
 
@@ -634,16 +636,14 @@ def _turn_id(turn: dict, index: int) -> str:
     return f"{float(turn.get('start') or 0):.3f}:{int(turn.get('speaker') or 1)}:{index}"
 
 
-def _coerce_turns(turns: Iterable[dict]) -> tuple[list[dict], int]:
+def _coerce_turns(turns: Iterable[dict]) -> list[dict]:
     result = []
-    total_fixes = 0
     for index, raw in enumerate(turns or []):
         if not isinstance(raw, dict):
             continue
-        text, fixes = normalize_transcript_text(raw.get("text") or "")
+        text = str(raw.get("text") or "").strip()
         if not text:
             continue
-        total_fixes += fixes
         start = max(0.0, float(raw.get("start") or 0.0))
         end = max(start, float(raw.get("end") or start))
         try:
@@ -663,7 +663,7 @@ def _coerce_turns(turns: Iterable[dict]) -> tuple[list[dict], int]:
                 "words": words,
             }
         )
-    return result, total_fixes
+    return result
 
 
 def _issue_id(kind: str, turn: dict, start: int, text: str) -> str:
@@ -1545,7 +1545,7 @@ def analyze_proofreading(
     notes: str = "",
     guide: str = "",
 ) -> dict:
-    cleaned_turns, _ = _coerce_turns(turns)
+    cleaned_turns = _coerce_turns(turns)
     note_terms = _note_terms(notes)
     guide_terms, guide_questions = _guide_material(guide)
     references = (*note_terms, *guide_terms, *_load_lexicon())
@@ -1625,4 +1625,76 @@ def analyze_proofreading(
             "topics": len(topics),
         },
         "text": render_reviewed_transcript(cleaned_turns),
+    }
+
+
+# ---------------------------------------------------------------------------
+# On a transcript
+#
+# The checks above work on plain text and character positions. These two
+# functions give them a transcript's text and take their findings back as
+# spans of words.
+# ---------------------------------------------------------------------------
+
+
+def clean(transcript: Transcript) -> Transcript:
+    """The transcript with the mechanical fixes to spacing and punctuation.
+
+    Applied once, to a fresh transcription. Text that a person typed is
+    never put through it."""
+
+    for turn in transcript.turns:
+        text, _ = normalize_transcript_text(turn.text)
+        transcript, _ = retext(transcript, turn.id, text, author=Author.CLEANUP)
+    return transcript
+
+
+def check(transcript: Transcript, notes: str = "", guide: str = "") -> dict:
+    """What a proofreader should look at.
+
+    `flags`: each with the span of words it is about. A check may point at
+    part of a word, such as a word without its comma; the flag is on the
+    whole word. `topics`: the turns where a new topic seems to begin."""
+
+    found = analyze_proofreading(
+        [
+            {
+                "id": turn.id,
+                "speaker": turn.speaker,
+                "start": turn.start,
+                "end": turn.end,
+                "text": turn.text,
+                "words": [
+                    {
+                        "text": word.text,
+                        "start": word.start,
+                        "end": word.end,
+                        "confidence": word.confidence,
+                    }
+                    for word in turn.words
+                ],
+            }
+            for turn in transcript.turns
+        ],
+        notes,
+        guide,
+    )
+    flags = []
+    for issue in found["issues"]:
+        turn = transcript.turns[issue["turn_index"]]
+        first, count = words_in_range(turn, issue["start"], issue["end"])
+        if not count:
+            continue
+        flags.append(
+            {
+                "id": issue["id"],
+                "kind": issue["kind"],
+                "span": [turn.words[first].id, turn.words[first + count - 1].id],
+                "message": issue["message"],
+                "suggestion": issue["suggestion"],
+            }
+        )
+    return {
+        "flags": flags,
+        "topics": [transcript.turns[topic["turn_index"]].id for topic in found["topics"]],
     }

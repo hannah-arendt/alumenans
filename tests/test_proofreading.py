@@ -1,11 +1,17 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
+import sys
 import unittest
 
+from alumenans.document.editing import retext
+from alumenans.document.transcript import Author, from_machine_turns, span_words, validate
+from alumenans.paths import PACKAGE_DIR
 from alumenans.proofreading import (
     _load_lexicon,
     analyze_proofreading,
+    check,
+    clean,
     normalize_transcript_text,
     render_reviewed_transcript,
 )
@@ -280,6 +286,117 @@ class TopicTests(unittest.TestCase):
 
         self.assertEqual(text.count("Спикер 1:"), 1)
         self.assertIn("[03:05]", text)
+
+
+def machine_turn(speaker, words, start=0.0):
+    """Words are texts, or (text, confidence) pairs; one word per second."""
+
+    entries = []
+    for index, word in enumerate(words):
+        text, confidence = word if isinstance(word, tuple) else (word, 0.95)
+        entries.append(
+            {"text": text, "start": start + index, "end": start + index + 0.8, "confidence": confidence}
+        )
+    return {"speaker": speaker, "words": entries}
+
+
+class CleanTests(unittest.TestCase):
+    def test_punctuation_is_fixed_and_the_words_stay_the_same_words(self):
+        machine = from_machine_turns([machine_turn(1, ["Я", "пошла", ",", "а", "он", "остался.."])])
+        cleaned = clean(machine)
+        validate(cleaned)
+        turn = cleaned.turns[0]
+        self.assertEqual(turn.text, "Я пошла, а он остался…")
+        self.assertEqual(machine.turns[0].text, "Я пошла , а он остался..")
+        # The last word only changed its punctuation: same word, same time.
+        last = turn.words[-1]
+        self.assertEqual((last.id, last.start, last.confidence), (6, 5.0, 0.95))
+        self.assertEqual(last.author, Author.SPEECH_MODEL)
+        # The comma that stood alone is gone; the word before it took it and
+        # is still the same word.
+        self.assertEqual([word.id for word in turn.words], [1, 2, 4, 5, 6])
+        self.assertEqual(turn.words[1].author, Author.SPEECH_MODEL)
+
+    def test_clean_text_is_left_alone(self):
+        machine = from_machine_turns([machine_turn(1, ["Я", "пошла,", "а", "он", "остался."])])
+        self.assertIs(clean(machine), machine)
+        cleaned = clean(from_machine_turns([machine_turn(1, ["Ну", ",", "да.."])]))
+        self.assertIs(clean(cleaned), cleaned)
+
+
+class CheckTests(unittest.TestCase):
+    def transcript(self):
+        return from_machine_turns(
+            [
+                machine_turn(1, ["Где", "вы", "были?"]),
+                machine_turn(2, ["Я", "ходила", "в", ("магазин,", 0.2), "потом", "домой."], start=10.0),
+            ]
+        )
+
+    def test_a_flag_is_on_the_whole_word(self):
+        transcript = self.transcript()
+        flags = check(transcript)["flags"]
+        self.assertEqual([flag["kind"] for flag in flags], ["hearing"])
+        flag = flags[0]
+        self.assertEqual(flag["span"], [7, 7])
+        self.assertEqual([word.text for word in span_words(transcript, tuple(flag["span"]))], ["магазин,"])
+        self.assertEqual(set(flag), {"id", "kind", "span", "message", "suggestion"})
+
+    def test_a_flag_follows_its_word_when_the_turn_is_edited(self):
+        edited, _ = retext(self.transcript(), 2, "Я потом ходила в магазин, потом домой.")
+        self.assertEqual(check(edited)["flags"][0]["span"], [7, 7])
+
+    def test_a_retyped_word_is_no_longer_doubted(self):
+        edited, _ = retext(self.transcript(), 2, "Я ходила в магазинчик, потом домой.")
+        self.assertEqual(check(edited)["flags"], [])
+
+    def test_the_checks_read_what_a_person_typed_as_it_is(self):
+        # Cleanup would change this text. The checks must not, or their
+        # character positions would be those of another text.
+        typed, _ = retext(self.transcript(), 1, "Ну ,  где вы были??")
+        found = analyze_proofreading(
+            [{"speaker": turn.speaker, "start": turn.start, "end": turn.end, "text": turn.text}
+             for turn in typed.turns]
+        )
+        self.assertEqual([turn["text"] for turn in found["turns"]], [turn.text for turn in typed.turns])
+
+    def test_topics_are_turns(self):
+        topics = check(self.transcript())["topics"]
+        self.assertLessEqual(set(topics), {1, 2})
+
+
+class CorpusTests(unittest.TestCase):
+    """On the recordings of the test corpus, when there are any."""
+
+    def test_every_finding_of_the_checks_becomes_a_flag_on_its_words(self):
+        sys.path.insert(0, str(PACKAGE_DIR.parents[1] / "tools"))
+        import corpus
+
+        cases = [case for case in corpus.discover() if case.transcript_path.is_file()]
+        if not cases:
+            self.skipTest("no transcribed recordings in tests/corpus")
+        for case in cases:
+            with self.subTest(case=case.name):
+                transcript = clean(from_machine_turns(corpus.load_transcript(case)["turns"]))
+                validate(transcript)
+                found = analyze_proofreading(
+                    [
+                        {"speaker": turn.speaker, "start": turn.start, "end": turn.end,
+                         "text": turn.text,
+                         "words": [{"text": word.text, "confidence": word.confidence}
+                                   for word in turn.words]}
+                        for turn in transcript.turns
+                    ]
+                )
+                flags = check(transcript)["flags"]
+                self.assertEqual(len(flags), len(found["issues"]))
+                self.assertTrue(flags)
+                for flag, issue in zip(flags, found["issues"]):
+                    words = span_words(transcript, tuple(flag["span"]))
+                    text = " ".join(word.text for word in words)
+                    self.assertIn(issue["text"], text)
+                    if issue["kind"] == "hearing":
+                        self.assertEqual(len(words), 1)
 
 
 if __name__ == "__main__":
