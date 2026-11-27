@@ -16,11 +16,8 @@ from alumenans.document.transcript import (
     from_machine_turns,
     letters,
     occurrences,
-    span_time,
     span_words,
-    time_is_measured,
     validate,
-    word_at,
     word_ranges,
     words_in_range,
 )
@@ -154,39 +151,21 @@ class ReadingTests(unittest.TestCase):
         self.assertEqual(words_in_range(turn, 7, 7), (1, 0))
         self.assertEqual(words_in_range(turn, 17, 17), (3, 0))
 
-    def test_a_span_gives_its_words_and_its_time(self):
+    def test_a_span_gives_its_words(self):
         transcript = sample()
         self.assertEqual([word.text for word in span_words(transcript, (2, 3))], ["как", "дела?"])
-        self.assertEqual(span_time(transcript, (2, 3)), (1.0, 2.8))
         self.assertEqual([word.text for word in span_words(transcript, (5, 5))], ["А"])
 
     def test_a_span_with_a_missing_or_reversed_end_is_no_span(self):
         transcript = sample()
         self.assertIsNone(span_words(transcript, (2, 99)))
         self.assertIsNone(span_words(transcript, (3, 2)))
-        self.assertIsNone(span_time(transcript, (3, 2)))
 
     def test_a_span_survives_a_split_of_its_turn(self):
         transcript, _ = apply(sample(), SplitTurn(1, 2))
         validate(transcript)
         self.assertEqual(len(transcript.turns), 3)
         self.assertEqual([word.text for word in span_words(transcript, (2, 3))], ["как", "дела?"])
-
-    def test_the_word_at_a_moment(self):
-        transcript = sample()
-        self.assertIsNone(word_at(transcript, -1.0))
-        self.assertEqual(word_at(transcript, 1.2).text, "как")
-        self.assertEqual(word_at(transcript, 1.9).text, "как")  # in the pause after it
-        self.assertEqual(word_at(transcript, 6.0).text, "дела?")  # between the turns
-        self.assertEqual(word_at(transcript, 12.1).text, "у")
-
-    def test_in_overlapping_turns_the_one_that_started_last_is_heard(self):
-        transcript = from_machine_turns(
-            [machine_turn(1, "раз два три четыре", start=0.0), machine_turn(2, "мгм", start=1.5, length=0.3)]
-        )
-        validate(transcript)
-        self.assertEqual(word_at(transcript, 1.6).text, "мгм")
-        self.assertEqual(word_at(transcript, 2.5).text, "три")
 
     def test_occurrences_ignore_case_and_punctuation(self):
         transcript = from_machine_turns([machine_turn(1, "Море, морем и «море». Марем")])
@@ -200,15 +179,6 @@ class ReadingTests(unittest.TestCase):
         gone, _ = retext(before, 2, "")
         self.assertEqual(changed_turns(before, gone), ([], [2]))
         self.assertEqual(changed_turns(before, before), ([], []))
-
-    def test_a_time_is_measured_until_an_edit_computes_it(self):
-        machine = sample()
-        edited, _ = retext(machine, 1, "Привет, как твои дела?")
-        measured = {word.text: time_is_measured(word, machine) for word in edited.turns[0].words}
-        self.assertEqual(
-            measured, {"Привет,": True, "как": True, "твои": False, "дела?": True}
-        )
-
 
 class ValidationTests(unittest.TestCase):
     def test_a_sound_transcript_passes(self):

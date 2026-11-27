@@ -73,7 +73,7 @@ class CallSiteTests(unittest.TestCase):
         )
         # Each dialog gets its own parse; plus the two definitions of the methods themselves.
         self.assertGreaterEqual(parse_count, dialog_count)
-        self.assertGreaterEqual(dialog_count, 6)
+        self.assertGreaterEqual(dialog_count, 4)
 
 
 if __name__ == "__main__":

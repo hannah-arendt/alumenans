@@ -24,9 +24,6 @@ from alumenans.transcription.service import WORKER_MODULE, worker_python
 FIRST_RUN_MARK = state_file(".installed", legacy=".установлено")
 
 
-NL = chr(10)
-
-
 NL2 = chr(10) * 2
 
 
@@ -442,6 +439,3 @@ def missing_packages():
     """Modules from REQUIRED_MODULES that are missing from this build."""
     return missing_modules()
 
-
-def everything_ready():
-    return not missing_packages() and transcriber_models_ready()

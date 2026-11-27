@@ -152,19 +152,6 @@ def t(key: str, **params) -> str:
     return text
 
 
-def plural_form(n: int, code: str | None = None) -> str:
-    """CLDR plural category: "one", "few" or "many" (Russian), "one"/"many" (English)."""
-
-    n = abs(int(n))
-    if (code or get_language()) == "ru":
-        if n % 10 == 1 and n % 100 != 11:
-            return "one"
-        if 2 <= n % 10 <= 4 and not 12 <= n % 100 <= 14:
-            return "few"
-        return "many"
-    return "one" if n == 1 else "many"
-
-
 def screen_catalogs(script: str | None = None) -> dict[str, dict[str, str]]:
     """The screen's catalogs (`const I18N` in resources/i18n.js), by language.
 

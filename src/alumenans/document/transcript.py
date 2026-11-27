@@ -12,7 +12,6 @@ ones; unchanged turns are shared between the old value and the new.
 from __future__ import annotations
 
 import math
-from bisect import bisect_right
 from dataclasses import dataclass
 from enum import Enum
 from functools import cached_property
@@ -190,34 +189,6 @@ def span_words(transcript: Transcript, span: Span) -> tuple[Word, ...] | None:
     return tuple(found)
 
 
-def span_time(transcript: Transcript, span: Span) -> tuple[float, float] | None:
-    """From when to when a span is heard."""
-
-    words = span_words(transcript, span)
-    if not words:
-        return None
-    return min(word.start for word in words), max(word.end for word in words)
-
-
-def word_at(transcript: Transcript, seconds: float) -> Word | None:
-    """The word being spoken at a moment, or the last one begun before it.
-
-    When turns overlap, the turn that started last wins."""
-
-    starts = [turn.start for turn in transcript.turns]
-    latest = bisect_right(starts, seconds) - 1
-    if latest < 0:
-        return None
-    chosen = latest
-    for index in range(latest, -1, -1):
-        if transcript.turns[index].end >= seconds:
-            chosen = index
-            break
-    words = transcript.turns[chosen].words
-    position = bisect_right([word.start for word in words], seconds) - 1
-    return words[max(0, position)]
-
-
 def occurrences(transcript: Transcript, form: str) -> list[WordId]:
     """Every word with the same letters as `form`, whatever its case and
     punctuation."""
@@ -237,17 +208,6 @@ def changed_turns(old: Transcript, new: Transcript) -> tuple[list[TurnId], list[
     changed = [turn.id for turn in new.turns if before.get(turn.id) is not turn]
     removed = [turn.id for turn in old.turns if turn.id not in new.turn_indexes]
     return changed, removed
-
-
-def time_is_measured(word: Word, machine: Transcript) -> bool:
-    """Whether the word still has the time the speech model gave it, as
-    opposed to one computed after an edit. `machine` is the transcript as
-    it came from transcription."""
-
-    if len(word.origin) != 1 or word.origin[0] not in machine.positions:
-        return False
-    heard = machine.word(word.origin[0])
-    return heard.start == word.start and heard.end == word.end
 
 
 # ---------------------------------------------------------------------------

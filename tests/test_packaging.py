@@ -176,7 +176,7 @@ class InstallerContentsTests(unittest.TestCase):
 class ResourceTests(unittest.TestCase):
     def test_interface_and_dictionary_live_in_the_package(self):
         for name in (
-            "anonymizer.html",
+            "app.html",
             "names-and-organizations.txt",
             "ALumenans_logo.ico",
             "ALumenans_logo.png",

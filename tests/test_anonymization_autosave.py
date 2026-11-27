@@ -26,7 +26,7 @@ from alumenans.paths import PACKAGE_DIR
 
 FILES = PACKAGE_DIR
 
-SCREEN = (FILES / "resources" / "anonymizer.html").read_text(encoding="utf-8")
+SCREEN = (FILES / "resources" / "app.html").read_text(encoding="utf-8")
 
 
 

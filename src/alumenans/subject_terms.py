@@ -19,9 +19,8 @@ from __future__ import annotations
 
 import re
 from collections import Counter
-from typing import Iterable
 
-from alumenans.guide.parse import Guide, content_words, parse_guide
+from alumenans.guide.parse import Guide
 
 
 CAPITALIZED = re.compile(
@@ -174,16 +173,3 @@ def suggest_from_documents(
     )
     return result
 
-
-def split_confirmed(terms: Iterable[dict]) -> tuple[list[str], list[str]]:
-    """Splits the list into confirmed items and items awaiting a decision."""
-
-    confirmed, pending = [], []
-    for item in terms:
-        if not isinstance(item, dict):
-            continue
-        term = str(item.get("term") or "")
-        if not term:
-            continue
-        (confirmed if item.get("confirmed") else pending).append(term)
-    return confirmed, pending

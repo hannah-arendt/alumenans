@@ -176,7 +176,6 @@ class JsonProgress:
         self.send({"type": "error", "message": message})
 
 
-ProgressCallback = Callable[[str, str, float | None], None]
 CancelCallback = Callable[[], bool]
 
 

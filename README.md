@@ -63,7 +63,7 @@ encrypted, or not saved at all.
 
 ![The anonymization tab: a transcript with pseudonyms in place of names, the list of findings and the pseudonymization key](docs/screenshots/anonymization.jpg)
 
-Finished transcripts are exported as `.txt` or `.docx`.
+Finished transcripts are exported as `.txt`.
 
 ## Status
 
@@ -178,7 +178,7 @@ Some suites test things you might not expect to have tests:
 
 - **`test_ui_contract.py`** and the `test_anonymization_*`, `test_proof_*`
   and `test_speaker_*` suites assert exact JS snippets and labels in
-  `anonymizer.html`. Change a UI string or handler and the test must change
+  `app.html`. Change a UI string or handler and the test must change
   with it.
 - **`test_packaging.py`** checks four things:
   - every third-party import is pinned in `pyproject.toml`;
@@ -259,7 +259,7 @@ in installed builds, add a check there.
 ```
 ┌──────────────────────── app process (python -m alumenans) ───────────────────────┐
 │                                                                                  │
-│  pywebview window ── shows ──▶ resources/anonymizer.html  (the entire UI)        │
+│  pywebview window ── shows ──▶ resources/app.html  (the entire UI)        │
 │        │                              │                                          │
 │        │ window.pywebview.api         │ fetch() to 127.0.0.1                     │
 │        ▼                              ▼                                          │
@@ -285,7 +285,7 @@ download, setup window); `server.py` holds the HTTP `Handler`; `api.py` holds
 `AppApi`.
 
 `main()` starts a `ThreadingHTTPServer` on 127.0.0.1 and a pywebview window
-that shows `resources/anonymizer.html`. That one HTML file holds the whole
+that shows `resources/app.html`. That one HTML file holds the whole
 UI: the transcription, proofreading and anonymization tabs. It reaches
 Python in two ways:
 
@@ -293,7 +293,7 @@ Python in two ways:
   serving audio with byte ranges.
 - **`AppApi`**, exposed as `window.pywebview.api`, for stateful operations:
   picking media, transcription jobs, project and study files, and saving
-  `.txt`, `.docx` and encrypted pseudonymization-key archives.
+  `.txt` and encrypted pseudonymization-key archives.
 
 **Launch sequence:**
 
@@ -388,7 +388,7 @@ src/alumenans/            the package
   transcription/          worker process, its manager, model-free core logic
   storage/                SQLite project/study stores, exchange, encrypted zip
   guide/                  interview-guide parsing, alignment, speakers
-  resources/              anonymizer.html (UI), names dictionary, icons
+  resources/              app.html (UI), names dictionary, icons
 tests/                    unittest suite
 tools/                    evaluate.py (metrics), startup_check.py (diagnostics)
 packaging/
@@ -415,7 +415,7 @@ packaging/
   - the screen: `tr("key", {params})` / `trn("key", n)` in JS, and
     `data-i18n="key"` (or `data-i18n-title`, `-placeholder`, `-aria-label`)
     in the markup, with the text in `const I18N` in `resources/i18n.js`,
-    which `anonymizer.html` loads before its own script.
+    which `app.html` loads before its own script.
 
   Add each new key to every language; `tests/test_i18n.py` checks that the
   keys and placeholders match. What goes into the user's documents follows

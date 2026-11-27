@@ -5,7 +5,7 @@ import sys
 import unittest
 
 from alumenans.document.editing import retext
-from alumenans.document.transcript import Author, from_machine_turns, span_words, validate
+from alumenans.document.transcript import Author, from_machine_turns, validate
 from alumenans.paths import PACKAGE_DIR
 from alumenans.proofreading import (
     _load_lexicon,
@@ -339,7 +339,7 @@ class CheckTests(unittest.TestCase):
         self.assertEqual([flag["kind"] for flag in flags], ["hearing"])
         flag = flags[0]
         self.assertEqual(flag["span"], [7, 7])
-        self.assertEqual([word.text for word in span_words(transcript, tuple(flag["span"]))], ["магазин,"])
+        self.assertEqual(transcript.word(7).text, "магазин,")
         self.assertEqual(set(flag), {"id", "kind", "span", "text", "message", "suggestion"})
         self.assertEqual(flag["text"], "магазин")
 
@@ -401,7 +401,9 @@ class CorpusTests(unittest.TestCase):
                 self.assertEqual(len(flags), len(found["issues"]))
                 self.assertTrue(flags)
                 for flag, issue in zip(flags, found["issues"]):
-                    words = span_words(transcript, tuple(flag["span"]))
+                    turn = transcript.turns[transcript.positions[flag["span"][0]][0]]
+                    low, high = (transcript.positions[word_id][1] for word_id in flag["span"])
+                    words = turn.words[low : high + 1]
                     text = " ".join(word.text for word in words)
                     self.assertIn(issue["text"], text)
                     if issue["kind"] == "hearing":

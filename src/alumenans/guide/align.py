@@ -32,8 +32,8 @@ be talked about differently.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Iterable, Sequence
+from dataclasses import dataclass
+from typing import Sequence
 
 from alumenans.guide.parse import Guide, GuideItem, content_words, parse_guide, similarity
 

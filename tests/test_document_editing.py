@@ -22,7 +22,6 @@ from alumenans.document.transcript import (
     Author,
     from_machine_turns,
     letters,
-    time_is_measured,
     validate,
 )
 from alumenans.paths import PACKAGE_DIR
@@ -412,37 +411,6 @@ class RetextTests(unittest.TestCase):
             retext(one_turn("да"), 9, "нет")
 
 
-class FollowSpanTests(unittest.TestCase):
-    def test_an_untouched_span_stays(self):
-        before = one_turn("раз два три четыре")
-        _, mapping = retext(before, 1, "раз два три пять")
-        self.assertEqual(follow_span(before, mapping, (1, 2)), (1, 2))
-
-    def test_a_span_follows_its_words_into_what_replaced_them(self):
-        before = one_turn("звонил Иван Петров вчера")
-        after, mapping = retext(before, 1, "звонил Иван Пет ров вчера")
-        span = follow_span(before, mapping, (2, 3))
-        self.assertEqual(
-            [after.word(word_id).text for word_id in span], ["Иван", "ров"]
-        )
-
-    def test_a_span_shrinks_when_one_end_is_deleted(self):
-        before = one_turn("звонил Иван Петров вчера")
-        _, mapping = retext(before, 1, "звонил Иван вчера")
-        self.assertEqual(follow_span(before, mapping, (2, 3)), (2, 2))
-
-    def test_a_span_whose_words_are_all_deleted_is_gone(self):
-        before = one_turn("звонил Иван Петров вчера")
-        _, mapping = retext(before, 1, "звонил вчера")
-        self.assertIsNone(follow_span(before, mapping, (2, 3)))
-
-    def test_retyped_words_are_reported_but_stay_in_place(self):
-        before = one_turn("по Морем гуляли")
-        _, mapping = retext(before, 1, "по Марем гуляли")
-        self.assertEqual(mapping.retyped, {2})
-        self.assertEqual(follow_span(before, mapping, (2, 2)), (2, 2))
-
-
 # ---------------------------------------------------------------------------
 # Any sequence of edits
 # ---------------------------------------------------------------------------
@@ -637,6 +605,39 @@ class AnySequenceOfEditsTests(unittest.TestCase):
                         self.assertIs(retext(transcript, probe.id, probe.text)[0], transcript)
 
 
+class FollowSpanTests(unittest.TestCase):
+    def test_an_untouched_span_stays(self):
+        before = one_turn("раз два три четыре")
+        _, mapping = retext(before, 1, "раз два три пять")
+        self.assertEqual(follow_span(before, mapping, (1, 2)), (1, 2))
+
+    def test_a_span_follows_its_words_into_what_replaced_them(self):
+        before = one_turn("звонил Иван Петров вчера")
+        after, mapping = retext(before, 1, "звонил Иван Пет ров вчера")
+        span = follow_span(before, mapping, (2, 3))
+        self.assertEqual(
+            [after.word(word_id).text for word_id in span], ["Иван", "ров"]
+        )
+
+    def test_a_span_shrinks_when_one_end_is_deleted(self):
+        before = one_turn("звонил Иван Петров вчера")
+        _, mapping = retext(before, 1, "звонил Иван вчера")
+        self.assertEqual(follow_span(before, mapping, (2, 3)), (2, 2))
+
+    def test_a_span_whose_words_are_all_deleted_is_gone(self):
+        before = one_turn("звонил Иван Петров вчера")
+        _, mapping = retext(before, 1, "звонил вчера")
+        self.assertIsNone(follow_span(before, mapping, (2, 3)))
+
+    def test_retyped_words_are_reported_but_stay_in_place(self):
+        before = one_turn("по Морем гуляли")
+        _, mapping = retext(before, 1, "по Марем гуляли")
+        self.assertEqual(mapping.retyped, {2})
+        self.assertEqual(follow_span(before, mapping, (2, 2)), (2, 2))
+
+
+
+
 # ---------------------------------------------------------------------------
 # Real recordings
 # ---------------------------------------------------------------------------
@@ -698,7 +699,12 @@ class RealRecordingTests(unittest.TestCase):
                     self.assertLessEqual(word.end, heard.end, word)
                 # A proofread transcript is mostly the machine's own words,
                 # with the machine's own times.
-                measured = [word for word in words if time_is_measured(word, machine)]
+                measured = [
+                    word
+                    for word in kept
+                    if (word.start, word.end)
+                    == (machine.word(word.id).start, machine.word(word.id).end)
+                ]
                 self.assertGreater(len(measured), len(words) / 2)
                 # Whatever was replaced is heard where its source was.
                 for word in words:

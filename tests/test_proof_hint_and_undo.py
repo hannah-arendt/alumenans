@@ -30,7 +30,7 @@ def languages():
 
 FILES = PACKAGE_DIR
 
-SCREEN = (FILES / "resources" / "anonymizer.html").read_text(encoding="utf-8")
+SCREEN = (FILES / "resources" / "app.html").read_text(encoding="utf-8")
 
 HINT_TEXT = (
     "В этом окне можно вносить только мелкие правки — менять буквы в слове, "

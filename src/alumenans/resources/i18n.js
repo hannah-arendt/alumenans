@@ -1,5 +1,5 @@
 // ALumenans interface language: the catalog and the helpers that read it.
-// Loaded by anonymizer.html before its own script, as a classic script, so
+// Loaded by app.html before its own script, as a classic script, so
 // I18N, UI_LANG, tr(), trn() and applyStaticText() are shared globals there.
 "use strict";
 
@@ -49,7 +49,6 @@ const I18N = {
     "cat.other": "Прочее",
     "cat.person": "Имена людей",
     "cat.place": "Места и адреса",
-    "coding.view.document": "Документ",
     "common.add": "Добавить",
     "common.cancel": "Отмена",
     "common.delete": "Удалить",
@@ -65,11 +64,6 @@ const I18N = {
     "count.turns.few": "{n} реплики",
     "count.turns.many": "{n} реплик",
     "count.turns.one": "{n} реплика",
-    "doc.desk": "Кабинетное исследование",
-    "doc.field": "Поле",
-    "doc.guide": "Гайд",
-    "doc.minutes": "Конспект встречи",
-    "doc.programme": "Программа",
     "error.bridge_not_ready": "Связь с окном программы ещё не готова.",
     "error.check_transcript": "Не удалось проверить расшифровку.",
     "error.empty_reply": "пустой ответ",
@@ -80,7 +74,6 @@ const I18N = {
     "error.open_recording": "Не удалось открыть запись.",
     "error.open_work": "Не удалось открыть работу.",
     "error.save": "Не удалось сохранить.",
-    "error.save_document": "Не удалось сохранить документ.",
     "error.save_file": "Не удалось сохранить файл.",
     "error.save_key": "Не удалось сохранить ключ.",
     "error.start_transcription": "Не удалось начать транскрибацию.",
@@ -289,7 +282,6 @@ const I18N = {
     "cat.other": "Other",
     "cat.person": "People's names",
     "cat.place": "Places and addresses",
-    "coding.view.document": "Document",
     "common.add": "Add",
     "common.cancel": "Cancel",
     "common.delete": "Delete",
@@ -305,11 +297,6 @@ const I18N = {
     "count.turns.few": "{n} turns",
     "count.turns.many": "{n} turns",
     "count.turns.one": "{n} turn",
-    "doc.desk": "Desk research",
-    "doc.field": "Field",
-    "doc.guide": "Guide",
-    "doc.minutes": "Meeting minutes",
-    "doc.programme": "Programme",
     "error.bridge_not_ready": "The connection to the program window is not ready yet.",
     "error.check_transcript": "Could not check the transcript.",
     "error.empty_reply": "empty reply",
@@ -320,7 +307,6 @@ const I18N = {
     "error.open_recording": "Could not open the recording.",
     "error.open_work": "Could not open the work.",
     "error.save": "Could not save.",
-    "error.save_document": "Could not save the document.",
     "error.save_file": "Could not save the file.",
     "error.save_key": "Could not save the key.",
     "error.start_transcription": "Could not start the transcription.",

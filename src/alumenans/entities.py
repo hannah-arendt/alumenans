@@ -27,7 +27,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from typing import Callable, Iterable, Sequence
+from typing import Callable, Sequence
 
 from alumenans.phonetics import phonetic_key, phonetic_similarity
 
@@ -206,11 +206,3 @@ def _merge_by_containment(entities: list[Entity], normalise) -> list[Entity]:
 
     return [w for w in entities if w.key not in absorbed]
 
-
-def entity_of(mention_id, entities: Iterable[Entity]) -> Entity | None:
-    """The entity a finding belongs to."""
-
-    for entity in entities:
-        if mention_id in entity.mentions:
-            return entity
-    return None

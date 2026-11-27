@@ -35,7 +35,7 @@ from alumenans.storage.interview_store import (
     summaries,
 )
 from alumenans.storage.study_store import StudyError, StudyStore, study_path_for
-from alumenans.study_documents import classify_documents, document_kind, read_document
+from alumenans.study_documents import classify_documents, read_document
 from alumenans.subject_terms import suggest_from_documents
 from alumenans.transcription.core import (
     TranscriptionError,
@@ -703,7 +703,6 @@ class AppApi:
                 "title": state.get("title", ""),
                 "guide": state.get("guide", ""),
                 "programme": state.get("programme", ""),
-                "interviews": state.get("interviews", []),
                 "terms": state.get("subject_terms", []),
                 "documents": store.documents(self._study_id),
                 "picked_up": picked_up,
@@ -786,50 +785,6 @@ class AppApi:
         except Exception:
             return ""
 
-    def study_add_document(self, kind="document"):
-        """Loads a study document that lives outside the series folder."""
-
-        with self._study_lock:
-            store = self._study_store()
-            if store is None:
-                return {"ok": False, "error": t("api.choose_study_first")}
-            if self.window is None:
-                return {"ok": False, "error": t("api.window_not_ready")}
-            try:
-                import webview
-
-                selected = self.window.create_file_dialog(
-                    webview.FileDialog.OPEN,
-                    allow_multiple=True,
-                    file_types=(
-                        t("api.filetype_documents"),
-                        t("api.filetype_all"),
-                    ),
-                )
-                if not selected:
-                    return {"ok": True, "cancelled": True}
-                added = []
-                for target in self._chosen_paths(selected):
-                    text = read_document(target).strip()
-                    if not text:
-                        continue
-                    store.save_document(
-                        self._study_id,
-                        filename=target.name,
-                        text=text,
-                        kind=str(kind or "document") if kind != "auto"
-                        else document_kind(target.name),
-                    )
-                    added.append(target.name)
-            except Exception as error:
-                return _failed(error)
-            return {
-                "ok": True,
-                "cancelled": False,
-                "added": added,
-                "documents": store.documents(self._study_id),
-            }
-
     def study_documents(self, interview=None):
         with self._study_lock:
             store = self._study_store(create=False)
@@ -839,14 +794,6 @@ class AppApi:
                 "ok": True,
                 "documents": store.documents(self._study_id, interview),
             }
-
-    def study_remove_document(self, document_id):
-        with self._study_lock:
-            store = self._study_store(create=False)
-            if store is None:
-                return {"ok": False, "error": t("api.study_not_open")}
-            store.remove_document(str(document_id))
-            return {"ok": True, "documents": store.documents(self._study_id)}
 
     # -- study dictionary ------------------------------------------------
 
@@ -932,13 +879,6 @@ class AppApi:
         self._refresh_subject_terms()
         _refresh_study_words(store.words(self._study_id))
         return data
-
-    def study_version(self):
-        with self._study_lock:
-            store = self._study_store(create=False)
-            if store is None:
-                return {"ok": True, "version": {}}
-            return {"ok": True, "version": store.version(self._study_id)}
 
     # -- interview export ----------------------------------------------------
 
@@ -1350,45 +1290,6 @@ class AppApi:
                 return {"ok": True, "cancelled": True}
             destination = self._chosen_path(selected)
             destination.write_text(str(content), encoding="utf-8")
-            return {
-                "ok": True,
-                "cancelled": False,
-                "name": destination.name,
-                "path": str(destination),
-            }
-        except Exception as error:
-            return _failed(error)
-
-    def save_docx(self, suggested_name, content, title=""):
-        """Saves the finished transcript as a document.
-
-        Built with the standard library: a .docx is a zip with XML, and it is
-        not worth pulling in yet another package for it."""
-
-        if self.window is None:
-            return {"ok": False, "error": t("api.window_not_ready")}
-        safe_name = re.sub(
-            r'[<>:"/\\|?*\x00-\x1f]', "_", Path(str(suggested_name)).name
-        ).strip(" .") or "расшифровка"
-        if not safe_name.lower().endswith(".docx"):
-            safe_name = re.sub(r"\.txt$", "", safe_name, flags=re.IGNORECASE) + ".docx"
-
-        try:
-            import webview
-
-            from alumenans.docx_export import save_transcript
-
-            selected = self.window.create_file_dialog(
-                webview.FileDialog.SAVE,
-                save_filename=safe_name,
-                file_types=(t("api.filetype_docx"), t("api.filetype_all")),
-            )
-            if not selected:
-                return {"ok": True, "cancelled": True}
-            destination = self._chosen_path(selected)
-            if destination.suffix.lower() != ".docx":
-                destination = destination.with_suffix(".docx")
-            save_transcript(destination, str(content), str(title or ""))
             return {
                 "ok": True,
                 "cancelled": False,

@@ -10,7 +10,7 @@ from alumenans.paths import PACKAGE_DIR
 RU = screen_catalogs()["ru"]
 
 
-HTML = PACKAGE_DIR.joinpath("resources", "anonymizer.html").read_text(
+HTML = PACKAGE_DIR.joinpath("resources", "app.html").read_text(
     encoding="utf-8"
 )
 # The page's wording lives in its catalog script; checks of wording look at both.

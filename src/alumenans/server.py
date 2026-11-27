@@ -21,7 +21,7 @@ from alumenans.introduction import respondent_speaker
 from alumenans.paths import RESOURCES
 from alumenans.places import KINDS as PLACE_KINDS
 
-SCREEN = RESOURCES / "anonymizer.html"
+SCREEN = RESOURCES / "app.html"
 
 
 I18N_SCRIPT = RESOURCES / "i18n.js"

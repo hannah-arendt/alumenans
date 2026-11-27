@@ -9,10 +9,9 @@ own copy of the shared documents, and the program doesn't know that twenty
 recordings are one piece of work.
 
 The design is deliberately simple: the study file sits in the study folder
-and knows about the interviews only where they are and how they differ
-from one another. The transcripts themselves stay in their own project
-files, so they can be moved or handed to a colleague without dragging
-everything else along.
+and knows nothing about the individual interviews. Each of them has its
+own file in the same folder, so it can be moved or handed to a colleague
+without dragging everything else along.
 
 A separate word about the "don't anonymize" list. It is the only place in
 the program where a decision reads "this data doesn't need to be hidden",
@@ -24,12 +23,11 @@ data is a leak that will be discovered late.
 
 from __future__ import annotations
 
-import json
 import re
 import time
 import uuid
 from pathlib import Path
-from typing import Any, Iterable, Sequence
+from typing import Any, Iterable
 
 from alumenans.i18n import t
 from alumenans.storage import cipher
@@ -102,36 +100,6 @@ CREATE TABLE IF NOT EXISTS documents (
 CREATE UNIQUE INDEX IF NOT EXISTS documents_by_file
     ON documents (study_id, interview_id, filename);
 
--- The interview register. The transcript lives in its own project file;
--- here is only what sets an interview apart from the others in the series.
-CREATE TABLE IF NOT EXISTS interviews (
-    id           TEXT PRIMARY KEY,
-    study_id     TEXT NOT NULL,
-    source_name  TEXT NOT NULL DEFAULT '',
-    source_path  TEXT NOT NULL DEFAULT '',
-    project_path TEXT NOT NULL DEFAULT '',
-    label        TEXT NOT NULL DEFAULT '',
-    branch       TEXT NOT NULL DEFAULT '',
-    branch_title TEXT NOT NULL DEFAULT '',
-    duration     REAL NOT NULL DEFAULT 0,
-    recorded_at  REAL,
-    added_at     REAL NOT NULL
-);
-
-CREATE INDEX IF NOT EXISTS interviews_by_study ON interviews (study_id, added_at);
-
--- The respondent's card: country, age, occupation and whatever else the
--- guide asks outright. It is the axis for comparing cases and, at the same
--- time, the list of traits whose combination can identify a person.
-CREATE TABLE IF NOT EXISTS case_attributes (
-    interview_id TEXT NOT NULL,
-    name         TEXT NOT NULL,
-    value        TEXT NOT NULL DEFAULT '',
-    turn_id      TEXT NOT NULL DEFAULT '',
-    source       TEXT NOT NULL DEFAULT '',
-    PRIMARY KEY (interview_id, name)
-);
-
 -- The subject of the study: what doesn't need to be hidden.
 CREATE TABLE IF NOT EXISTS subject_terms (
     study_id   TEXT NOT NULL,
@@ -143,9 +111,6 @@ CREATE TABLE IF NOT EXISTS subject_terms (
     PRIMARY KEY (study_id, term)
 );
 """
-
-_UNSAFE = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
-
 
 class StudyError(RuntimeError):
     """A study file error that can be shown to the person."""
@@ -412,13 +377,6 @@ class StudyStore:
         query += " ORDER BY kind, title"
         return [dict(row) for row in self.connect().execute(query, values)]
 
-    def remove_document(self, document_id: str) -> None:
-        connection = self.connect()
-        with connection:
-            connection.execute(
-                "DELETE FROM documents WHERE id = ?", (str(document_id),)
-            )
-
     def load_study(self) -> dict | None:
         connection = self.connect()
         row = connection.execute(
@@ -434,124 +392,8 @@ class StudyStore:
             "programme": str(row["programme"]),
             "notes": str(row["notes"]),
             "updated_at": float(row["updated_at"]),
-            "interviews": self.interviews(identifier),
             "subject_terms": self.subject_terms(identifier),
         }
-
-    # -- interviews in the series ------------------------------------------
-
-    def register_interview(
-        self,
-        study_id: str,
-        *,
-        interview_id: str,
-        source_name: str = "",
-        source_path: str | Path = "",
-        project_path: str | Path = "",
-        label: str = "",
-        duration: float = 0.0,
-    ) -> str:
-        connection = self.connect()
-        with connection:
-            connection.execute(
-                """
-                INSERT INTO interviews (
-                    id, study_id, source_name, source_path, project_path,
-                    label, duration, added_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT (id) DO UPDATE SET
-                    study_id = excluded.study_id,
-                    source_name = excluded.source_name,
-                    source_path = excluded.source_path,
-                    project_path = excluded.project_path,
-                    label = CASE WHEN excluded.label = '' THEN interviews.label
-                                 ELSE excluded.label END,
-                    duration = excluded.duration
-                """,
-                (
-                    interview_id,
-                    study_id,
-                    str(source_name or ""),
-                    str(source_path or ""),
-                    str(project_path or ""),
-                    str(label or ""),
-                    float(duration or 0.0),
-                    time.time(),
-                ),
-            )
-        return interview_id
-
-    def save_branch(
-        self,
-        interview_id: str,
-        branch: str,
-        branch_title: str = "",
-    ) -> None:
-        """The guide branch the interview went down is a feature of the case."""
-
-        connection = self.connect()
-        with connection:
-            connection.execute(
-                "UPDATE interviews SET branch = ?, branch_title = ? WHERE id = ?",
-                (str(branch or ""), str(branch_title or ""), interview_id),
-            )
-
-    def save_case_attributes(
-        self,
-        interview_id: str,
-        attributes: Iterable[dict],
-    ) -> None:
-        connection = self.connect()
-        with connection:
-            connection.executemany(
-                "INSERT INTO case_attributes "
-                "(interview_id, name, value, turn_id, source) VALUES (?, ?, ?, ?, ?) "
-                "ON CONFLICT (interview_id, name) DO UPDATE SET "
-                "value = excluded.value, turn_id = excluded.turn_id, "
-                "source = excluded.source",
-                [
-                    (
-                        interview_id,
-                        str(item.get("name") or ""),
-                        str(item.get("value") or ""),
-                        str(item.get("turn_id") or ""),
-                        str(item.get("source") or ""),
-                    )
-                    for item in attributes
-                    if isinstance(item, dict) and str(item.get("name") or "")
-                ],
-            )
-
-    def interviews(self, study_id: str) -> list[dict]:
-        connection = self.connect()
-        attributes: dict[str, dict[str, str]] = {}
-        for row in connection.execute(
-            "SELECT c.* FROM case_attributes c JOIN interviews i "
-            "ON i.id = c.interview_id WHERE i.study_id = ?",
-            (study_id,),
-        ):
-            attributes.setdefault(str(row["interview_id"]), {})[
-                str(row["name"])
-            ] = str(row["value"])
-
-        return [
-            {
-                "id": str(row["id"]),
-                "source_name": str(row["source_name"]),
-                "source_path": str(row["source_path"]),
-                "project_path": str(row["project_path"]),
-                "label": str(row["label"]),
-                "branch": str(row["branch"]),
-                "branch_title": str(row["branch_title"]),
-                "duration": float(row["duration"]),
-                "added_at": float(row["added_at"]),
-                "attributes": attributes.get(str(row["id"]), {}),
-            }
-            for row in connection.execute(
-                "SELECT * FROM interviews WHERE study_id = ? ORDER BY added_at",
-                (study_id,),
-            )
-        ]
 
     # -- subject of the study ----------------------------------------------
 
@@ -638,13 +480,3 @@ class StudyStore:
             }
             for row in connection.execute(query, (study_id,))
         ]
-
-    def is_subject(self, study_id: str, value: str) -> bool:
-        """A confirmed subject of the study is not to be anonymized."""
-
-        if not normalize_term(value):
-            return False
-        return any(
-            matches_subject_term(value, item["term"])
-            for item in self.subject_terms(study_id, confirmed_only=True)
-        )

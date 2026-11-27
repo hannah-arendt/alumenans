@@ -5,13 +5,11 @@
 from __future__ import annotations
 
 import hashlib
-import json
 import math
 import re
 from collections import Counter
 from difflib import SequenceMatcher
 from functools import lru_cache
-from pathlib import Path
 from typing import Iterable, Sequence
 
 from alumenans.document.editing import retext

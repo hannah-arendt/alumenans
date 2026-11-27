@@ -3851,10 +3851,6 @@ function proofTranscriptWithMap(){
   return {text: blocks.join("\n\n"), ranges};
 }
 
-function renderProofTranscript(){
-  return proofTranscriptWithMap().text;
-}
-
 function bindTopicTitles(){
   document.querySelectorAll("[data-topic-title]").forEach(field => {
     field.onchange = () => {
@@ -3882,12 +3878,6 @@ function rememberProofWord(issue){
     .then(renderStudyWords)
     .catch(() => {});
   keepProofIssue(issue);
-}
-
-function newWordsText(){
-  const words = [...PROOF.newWords.values()]
-    .sort((left, right) => left.localeCompare(right, "ru"));
-  return words.length ? `${words.join("\n")}\n` : "";
 }
 
 /* ---------- study ---------- */
@@ -3939,13 +3929,6 @@ function renderStudy(){
       <small>${esc(describeRecording(recording))}</small>
     </button>`).join("");
 }
-
-const DOC_KINDS = {
-  get guide(){ return tr("doc.guide"); }, get programme(){ return tr("doc.programme"); },
-  get notes(){ return tr("notes.label"); }, get desk(){ return tr("doc.desk"); },
-  get field(){ return tr("doc.field"); }, get minutes(){ return tr("doc.minutes"); },
-  get document(){ return tr("coding.view.document"); }
-};
 
 /* Notes belong to a specific conversation and are filled in once it has been
    chosen — not before: someone else's notes in the field are worse than an empty field. */
@@ -4785,19 +4768,6 @@ document.addEventListener("keydown", event => {
 
 $("btnAdd").onclick = () => markSelection("other", "");
 $("btnUndoAnon").onclick = () => { undoAnon(); };
-
-/* Anonymisation is finished — we hand over the result as a document. The text file
-   stays alongside: it's needed when the transcript is read by a program rather than a person. */
-async function saveCleanDocx(){
-  const fileName = baseName() + "-анонимизированно.docx";
-  try {
-    const saved = await appCall("save_docx", fileName, buildClean(), baseName());
-    if (!saved.ok) throw new Error(saved.error || tr("error.save_document"));
-  } catch (error){
-    save(baseName() + "-анонимизированно.txt", buildClean());
-  }
-  markAnonymizationDone();
-}
 
 /* Exporting a non-anonymised transcript is not allowed: the real names
    would spread into tables and exchange files, and could never be gathered back from there.
