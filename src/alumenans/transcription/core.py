@@ -566,8 +566,8 @@ def words_to_transcript_turns(
             phrase_speaker = speaker
 
         for speaker, group in groups:
+            group = _without_opening_dash(group)
             text = clean_recognized_text(" ".join(item.text for item in group))
-            text = re.sub(r"^—\s*", "", text)
             if not text:
                 continue
             if (
@@ -593,6 +593,20 @@ def words_to_transcript_turns(
                 )
             previous_speaker = speaker
     return turns
+
+
+def _without_opening_dash(words: list[TimedWord]) -> list[TimedWord]:
+    """The words without the dash the speech model puts where it hears a new
+    utterance begin. The turn already says who speaks, so the dash is dropped
+    from the words, and with them from the text."""
+
+    while words:
+        rest = words[0].text.lstrip()
+        if not rest.startswith("—"):
+            break
+        rest = rest[1:].lstrip()
+        words = ([replace(words[0], text=rest)] if rest else []) + words[1:]
+    return words
 
 
 # ---------------------------------------------------------------------------

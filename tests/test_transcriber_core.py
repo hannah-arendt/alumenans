@@ -226,6 +226,34 @@ class RecognitionWindowTests(unittest.TestCase):
             [(1, "Первый вопрос."), (2, "Ответ.")],
         )
 
+    def test_an_opening_dash_is_dropped_from_the_words_as_well_as_the_text(self):
+        turns = words_to_transcript_turns(
+            [
+                TimedWord(1, 2, "Вопрос?"),
+                TimedWord(2.1, 2.2, "—"),
+                TimedWord(2.2, 3, "Ответ"),
+                TimedWord(3.1, 3.2, "—"),
+                TimedWord(3.2, 4, "это"),
+                TimedWord(4.1, 5, "да."),
+                TimedWord(5.2, 5.3, "—"),
+                TimedWord(5.3, 6, "Угу."),
+                TimedWord(20, 21, "—Ясно."),
+            ],
+            [
+                DiarizedSpan(0, 2.05, 1),
+                DiarizedSpan(2.05, 15, 2),
+                DiarizedSpan(15, 25, 1),
+            ],
+        )
+
+        self.assertEqual(
+            [(turn.speaker, turn.text) for turn in turns],
+            [(1, "Вопрос?"), (2, "Ответ — это да. Угу."), (1, "Ясно.")],
+        )
+        for turn in turns:
+            self.assertEqual(turn.text, " ".join(word.text for word in turn.words))
+        self.assertEqual(turns[1].start, 2.2)
+
     def test_speaker_boundary_splits_a_phrase_at_the_matching_word(self):
         turns = words_to_transcript_turns(
             [
