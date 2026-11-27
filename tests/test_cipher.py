@@ -4,6 +4,7 @@ import os
 import shutil
 import sqlite3
 import tempfile
+import threading
 import unicodedata
 import unittest
 from pathlib import Path
@@ -97,6 +98,26 @@ class EncryptedFileTests(unittest.TestCase):
 
     def tearDown(self):
         self.temporary.cleanup()
+
+    def test_a_file_opened_on_one_thread_is_used_on_another(self):
+        connection = cipher.connect(self.path, self.secret)
+        self.addCleanup(connection.close)
+        connection.execute("CREATE TABLE note (text TEXT)")
+        failures = []
+
+        def write():
+            try:
+                with connection:
+                    connection.execute("INSERT INTO note VALUES ('saved')")
+            except Exception as error:
+                failures.append(error)
+
+        thread = threading.Thread(target=write)
+        thread.start()
+        thread.join()
+
+        self.assertEqual(failures, [])
+        self.assertEqual(connection.execute("SELECT text FROM note").fetchall(), [("saved",)])
 
     def test_a_transcript_reads_back(self):
         store = ProjectStore(self.path, self.secret)

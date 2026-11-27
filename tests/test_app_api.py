@@ -2,7 +2,9 @@
 # -*- coding: utf-8 -*-
 
 import os
+import queue
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -78,6 +80,34 @@ class AppApiTests(unittest.TestCase):
 
         self.assertEqual(response, {"ok": True})
         self.assertEqual(self.transcriber.started, ([self.media], 4, ""))
+
+    def test_proofreading_is_saved_when_each_call_comes_on_its_own_thread(self):
+        # The window runs every call to the application on a new thread.
+        # The threads here outlive their calls, so that no two calls can be
+        # given the same thread identifier.
+        finished = threading.Event()
+        self.addCleanup(finished.set)
+
+        def call(method, *arguments):
+            replies = queue.Queue()
+
+            def run():
+                replies.put(method(*arguments))
+                finished.wait()
+
+            threading.Thread(target=run, daemon=True).start()
+            return replies.get(timeout=10)
+
+        turn = {"id": "t1", "start": 0.0, "end": 1.0, "speaker": 1, "text": "Привет", "words": []}
+        result = {"source_name": self.media.name, "duration": 1.0, "turns": [turn]}
+        self.assertTrue(call(self.api.project_save_transcript, result)["ok"])
+
+        saved = call(self.api.project_save_turns, [{**turn, "text": "Привет!"}])
+
+        self.assertEqual(saved.get("error"), None)
+        loaded = call(self.api.project_load)
+        self.addCleanup(self.api._close_project)
+        self.assertEqual(loaded["state"]["turns"][0]["text"], "Привет!")
 
     def test_interface_is_shown_only_once_when_bridge_is_ready(self):
         shown = []
