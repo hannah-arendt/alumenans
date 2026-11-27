@@ -1,6 +1,7 @@
 """What the window can ask of Python: `AppApi`, exposed as `window.pywebview.api`."""
 
 import json
+import logging
 import os
 import re
 import threading
@@ -151,6 +152,16 @@ def _schedule_new_words_email(path, words):
     ).start()
 
 
+log = logging.getLogger(__name__)
+
+def _failed(error):
+    """The reply to a request that raised. The error is logged as well: the
+    window may not show the reply."""
+
+    log.error("a request from the window failed", exc_info=error)
+    return {"ok": False, "error": str(error)[:400]}
+
+
 class AppApi:
     def __init__(self, transcriber, ready_callback=None):
         self.transcriber = transcriber
@@ -255,7 +266,7 @@ class AppApi:
                     speaker_count=speaker_count,
                 )
             except (ProjectError, Exception) as error:
-                return {"ok": False, "error": str(error)[:400]}
+                return _failed(error)
             return {
                 "ok": True,
                 "interview_id": self._interview_id,
@@ -281,7 +292,7 @@ class AppApi:
                         notes=None if notes is None else str(notes),
                     )
             except Exception as error:
-                return {"ok": False, "error": str(error)[:400]}
+                return _failed(error)
             return {"ok": True, "turns": saved, "path": str(store.path)}
 
     def project_record_decision(self, decision):
@@ -300,7 +311,7 @@ class AppApi:
                     replacement=str(payload.get("replacement") or ""),
                 )
             except Exception as error:
-                return {"ok": False, "error": str(error)[:400]}
+                return _failed(error)
             return {"ok": True}
 
     def _keep_key_archive(self, archive, entries):
@@ -450,7 +461,7 @@ class AppApi:
 
                 selected = self.window.create_file_dialog(webview.FileDialog.FOLDER)
             except Exception as error:
-                return {"ok": False, "error": str(error)[:400]}
+                return _failed(error)
             if not selected:
                 return {"ok": True, "cancelled": True}
             folder = self._chosen_path(selected)
@@ -496,7 +507,7 @@ class AppApi:
             except cipher.CipherError as error:
                 return {"ok": False, "error": str(error)}
             except Exception as error:
-                return {"ok": False, "error": str(error)[:400]}
+                return _failed(error)
             self._study_secret = secret
             return self._study_payload()
 
@@ -553,7 +564,7 @@ class AppApi:
                     self._import_study_file(store, state)
                 self._remember_folder(self._study_folder)
             except Exception as error:
-                return {"ok": False, "error": str(error)[:400]}
+                return _failed(error)
             return {
                 "ok": True,
                 "cancelled": False,
@@ -687,7 +698,7 @@ class AppApi:
                     )
                     added.append(target.name)
             except Exception as error:
-                return {"ok": False, "error": str(error)[:400]}
+                return _failed(error)
             return {
                 "ok": True,
                 "cancelled": False,
@@ -734,7 +745,7 @@ class AppApi:
             except StudyError as error:
                 return {"ok": False, "error": str(error)}
             except Exception as error:
-                return {"ok": False, "error": str(error)[:400]}
+                return _failed(error)
         _refresh_study_words(words)
         return {"ok": True, "word": added, "words": words}
 
@@ -825,7 +836,7 @@ class AppApi:
                 turns = store.anonymized_turns(self._interview_id)
                 interview = store.load(self._interview_id) or {}
             except Exception as error:
-                return {"ok": False, "error": str(error)[:400]}
+                return _failed(error)
 
         with self._study_lock:
             study_store = self._study_store(create=False)
@@ -868,7 +879,7 @@ class AppApi:
         except ExchangeError as error:
             return {"ok": False, "error": str(error)}
         except Exception as error:
-            return {"ok": False, "error": str(error)[:400]}
+            return _failed(error)
         return {
             "ok": True,
             "path": str(destination),
@@ -892,7 +903,7 @@ class AppApi:
                     programme=str(programme or ""),
                 )
             except Exception as error:
-                return {"ok": False, "error": str(error)[:400]}
+                return _failed(error)
             return {"ok": True, "path": str(store.path)}
 
     def study_register(self, branch="", branch_title="", attributes=None):
@@ -923,7 +934,7 @@ class AppApi:
                     store.save_case_attributes(self._interview_id, attributes)
                 interviews = store.interviews(self._study_id)
             except Exception as error:
-                return {"ok": False, "error": str(error)[:400]}
+                return _failed(error)
             return {"ok": True, "interviews": interviews}
 
     LAST_FOLDER = state_file(".last-folder", legacy=".последняя-папка")
@@ -980,7 +991,7 @@ class AppApi:
                 terms = store.subject_terms(self._study_id)
                 self._refresh_subject_terms()
             except Exception as error:
-                return {"ok": False, "error": str(error)[:400]}
+                return _failed(error)
             return {"ok": True, "terms": terms, "study": str(store.path)}
 
     def study_suggest_terms(self, guide="", programme=""):
@@ -1003,7 +1014,7 @@ class AppApi:
                 terms = store.subject_terms(self._study_id)
                 self._refresh_subject_terms()
             except Exception as error:
-                return {"ok": False, "error": str(error)[:400]}
+                return _failed(error)
             return {"ok": True, "terms": terms}
 
     def study_set_term(self, term, confirmed):
@@ -1019,7 +1030,7 @@ class AppApi:
                 )
                 terms = self._refresh_subject_terms()
             except Exception as error:
-                return {"ok": False, "error": str(error)[:400]}
+                return _failed(error)
             return {"ok": True, "protected": [item["term"] for item in terms]}
 
     def study_remove_term(self, term):
@@ -1031,7 +1042,7 @@ class AppApi:
                 store.remove_subject_term(self._study_id, str(term or ""))
                 self._refresh_subject_terms()
             except Exception as error:
-                return {"ok": False, "error": str(error)[:400]}
+                return _failed(error)
             return {"ok": True}
 
     def project_load(self):
@@ -1044,7 +1055,7 @@ class AppApi:
             try:
                 state = store.load()
             except Exception as error:
-                return {"ok": False, "error": str(error)[:400]}
+                return _failed(error)
             if state:
                 self._interview_id = state["interview_id"]
             return {"ok": True, "state": state, "path": str(store.path)}
@@ -1065,7 +1076,7 @@ class AppApi:
                 store.mark_anonymized(self._interview_id, left=left)
                 state = store.anonymization_state(self._interview_id)
             except Exception as error:
-                return {"ok": False, "error": str(error)[:400]}
+                return _failed(error)
             return {"ok": True, "state": state}
 
     def cleanup_preview(self):
@@ -1087,7 +1098,7 @@ class AppApi:
                     store.anonymized_turns(self._interview_id)
                 )
             except Exception as error:
-                return {"ok": False, "error": str(error)[:400]}
+                return _failed(error)
 
         files = [str(path) for path in self._own_leftovers()]
         # Words don't count: they are not deleted but transplanted onto the
@@ -1130,7 +1141,7 @@ class AppApi:
                     }
                 removed = store.forget_original_text(self._interview_id)
             except Exception as error:
-                return {"ok": False, "error": str(error)[:400]}
+                return _failed(error)
 
         deleted = []
         for path in self._own_leftovers():
@@ -1174,7 +1185,7 @@ class AppApi:
                 state = self._project.load()
             except Exception as error:
                 self._close_project()
-                return {"ok": False, "error": str(error)[:400]}
+                return _failed(error)
             self._project_pinned = True
             if state:
                 self._interview_id = state["interview_id"]
@@ -1197,7 +1208,7 @@ class AppApi:
         try:
             return {"ok": True, "language": i18n.set_language(code)}
         except ValueError as error:
-            return {"ok": False, "error": str(error)[:400]}
+            return _failed(error)
 
     def mark_interface_ready(self):
         with self._ready_lock:
@@ -1211,7 +1222,7 @@ class AppApi:
                 self._ready_callback()
             return {"ok": True}
         except Exception as error:
-            return {"ok": False, "error": str(error)[:400]}
+            return _failed(error)
 
     def choose_media(self, path="", parts=None):
         """Chooses a recording. With a path — directly; without one — via a dialog.
@@ -1252,7 +1263,7 @@ class AppApi:
         except TranscriptionError as error:
             return {"ok": False, "error": str(error)}
         except Exception as error:
-            return {"ok": False, "error": str(error)[:400]}
+            return _failed(error)
         return self._use_media(chosen, self._siblings(chosen))
 
     def _siblings(self, path):
@@ -1397,7 +1408,7 @@ class AppApi:
                 "path": str(destination),
             }
         except Exception as error:
-            return {"ok": False, "error": str(error)[:400]}
+            return _failed(error)
 
     def save_docx(self, suggested_name, content, title=""):
         """Saves the finished transcript as a document.
@@ -1436,7 +1447,7 @@ class AppApi:
                 "path": str(destination),
             }
         except Exception as error:
-            return {"ok": False, "error": str(error)[:400]}
+            return _failed(error)
 
     def save_key_archive(self, suggested_name, content, password, entries=0):
         """The anonymisation key exists only under a password.
@@ -1483,7 +1494,7 @@ class AppApi:
                 "path": str(destination),
             }
         except Exception as error:
-            return {"ok": False, "error": str(error)[:400]}
+            return _failed(error)
 
     def open_new_words_email(self, words):
         if self.selected_media is None:
@@ -1512,4 +1523,4 @@ class AppApi:
             _schedule_new_words_email(destination, cleaned)
             return {"ok": True, "path": str(destination)}
         except Exception as error:
-            return {"ok": False, "error": str(error)[:400]}
+            return _failed(error)

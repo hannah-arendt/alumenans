@@ -1278,6 +1278,16 @@ function localFetch(path, options = {}){
   return fetch(path, {...options, headers});
 }
 
+/* Every error ends up in the program's log, whether or not the screen has a
+   place to show it: the window has no console a person could look at. */
+function reportError(where, error, level = "error"){
+  const message = `${where}: ${(error && (error.stack || error.message)) || error}`;
+  console.error(message);
+  localFetch("/page-error", {method:"POST", body:JSON.stringify({level, message})}).catch(() => {});
+}
+window.addEventListener("error", event => reportError("page", event.error || event.message));
+window.addEventListener("unhandledrejection", event => reportError("page", event.reason));
+
 /* Subject terms remember where they came from in Russian («гайд»,
    «программа», «вручную»): that is stored data. Shown in the interface language. */
 function subjectSourceName(source){
@@ -2293,7 +2303,14 @@ async function appCall(method, ...args){
   if (!api || typeof api[method] !== "function"){
     throw new Error(tr("error.bridge_not_ready"));
   }
-  return api[method](...args);
+  try {
+    const reply = await api[method](...args);
+    if (reply && reply.ok === false) reportError(method, reply.error, "warning");
+    return reply;
+  } catch (error){
+    reportError(method, error);
+    throw error;
+  }
 }
 
 function overallTranscriptionProgress(status){

@@ -3,6 +3,7 @@
 Listens on 127.0.0.1 only and answers only the program's own window."""
 
 import json
+import logging
 import re
 import secrets
 import socket
@@ -29,6 +30,8 @@ I18N_SCRIPT = RESOURCES / "i18n.js"
 
 LOGO = RESOURCES / "ALumenans_logo.png"
 
+
+log = logging.getLogger(__name__)
 
 LIMIT = 32 * 1024 * 1024  # a sensible ceiling on the size of a transcript
 
@@ -224,12 +227,27 @@ class Handler(BaseHTTPRequestHandler):
             self._send(202, json.dumps({"model": dict(MODEL_STATE)}))
             return
 
+        if self.path == "/page-error":
+            # Whatever went wrong in the window: its own errors, and replies
+            # from the program that said "failed". The window has no console
+            # of its own to show them in.
+            length = min(int(self.headers.get("Content-Length") or 0), LIMIT)
+            try:
+                report = json.loads(self.rfile.read(length).decode("utf-8"))
+                level = logging.WARNING if report.get("level") == "warning" else logging.ERROR
+                log.log(level, "window: %s", str(report.get("message") or "")[:4000])
+            except Exception:
+                log.exception("%s failed", self.path)
+            self._send(204, "")
+            return
+
         if self.path == "/inflect":
             length = int(self.headers.get("Content-Length") or 0)
             try:
                 request = json.loads(self.rfile.read(length).decode("utf-8"))
                 word = inflect_word(request.get("phrase") or "", request.get("gram") or {})
             except Exception:
+                log.exception("%s failed", self.path)
                 word = (request.get("phrase") if isinstance(request, dict) else "") or ""
             self._send(200, json.dumps({"phrase": word}, ensure_ascii=False))
             return
@@ -251,6 +269,7 @@ class Handler(BaseHTTPRequestHandler):
                     if isinstance(word, (str, int))
                 }
             except Exception:
+                log.exception("%s failed", self.path)
                 known = {}
             self._send(200, json.dumps({"known": known}, ensure_ascii=False))
             return
@@ -273,6 +292,7 @@ class Handler(BaseHTTPRequestHandler):
                     return
                 report = build_report(guide_text, request.get("turns") or [])
             except Exception as error:
+                log.exception("%s failed", self.path)
                 self._send(
                     500,
                     json.dumps(
@@ -297,6 +317,7 @@ class Handler(BaseHTTPRequestHandler):
                     request.get("guide") or "",
                 )
             except Exception as error:
+                log.exception("%s failed", self.path)
                 self._send(
                     500,
                     json.dumps(
@@ -321,6 +342,7 @@ class Handler(BaseHTTPRequestHandler):
             request = json.loads(self.rfile.read(length).decode("utf-8"))
             text = request.get("text") or ""
         except Exception:
+            log.exception("%s failed", self.path)
             self._send(400, json.dumps({"error": t("http.bad_request")}))
             return
 
@@ -330,6 +352,7 @@ class Handler(BaseHTTPRequestHandler):
             # No Natasha — serve at least the dictionary findings.
             spans = dict_spans(text)
         except Exception as error:
+            log.exception("%s failed", self.path)
             self._send(500, json.dumps({"error": str(error)}))
             return
 

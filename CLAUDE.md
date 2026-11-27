@@ -74,6 +74,8 @@ A separate setup-window process shows progress while `prepare_launch()` download
 
 ## Conventions and gotchas
 
+- **Code minimalism.** Never add a special case when the general case already covers the same behaviour. Less code is the direction the codebase is moving in: prefer deleting a rule to keeping it "just in case".
+
 - **Recording language and UI language are independent.** Recordings are Russian only; the UI is Russian or English, chosen by the user (switch in the top bar, stored in `.ui-language`, passed to child processes as `ALUMENANS_UI_LANGUAGE`). In new code, never tie language-data assumptions (ASR model, NER, morphology, word lists, regexes) to the UI language or its strings, or the reverse. What is written into the user's documents follows the recording language: pseudonyms («Персона 1»), speaker labels («Спикер 2»), exported file names and the key file stay Russian whatever the UI language.
 
 - **UI text goes through a catalog, never a literal.** Python: `t("key", **params)` from `alumenans.i18n`, with the strings in `src/alumenans/locales/ru.py` and `en.py`. The screen: `tr("key", {params})` and `trn("key", n)` (plural `.one`/`.few`/`.many` keys) in JS, and `data-i18n="key"` / `data-i18n-title` / `data-i18n-placeholder` / `data-i18n-aria-label` in the markup, with the strings in `const I18N` in `resources/i18n.js` (loaded by `anonymizer.html` before its own script and served by `Handler` at `/i18n.js`). Add every new key to all languages: `tests/test_i18n.py` checks that the keys and placeholders match and that every key used exists. Tests that assert Russian messages pin the language with `i18n.set_language("ru", persist=False)` in `setUpModule`, because CI has no `.installed` and falls back to the system locale.
