@@ -72,6 +72,7 @@ MESSAGES = {
     'project.not_anonymized': 'Anonymization has not been done yet.',
     'project.not_transcribed': 'The interview has not been transcribed yet.',
     'project.open_failed': 'Could not open the project file: {error}',
+    'project.other_version': 'This interview file was made by another version of the program and cannot be opened.',
     'project.unresolved': 'Unresolved anonymization findings left: {count}.',
     'proof.boundary_low_confidence': 'This word sits at the boundary of two audio fragments and was recognised with low confidence.',
     'proof.cut_turn': 'The turn breaks off mid-word and someone else speaks next. Check where the boundary really is.',
