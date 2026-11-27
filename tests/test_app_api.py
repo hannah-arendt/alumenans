@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
+import json
 import os
 import queue
 import tempfile
@@ -25,6 +26,29 @@ from alumenans.storage.cipher import StudySecret
 from alumenans.storage.study_store import study_path_for
 
 
+def transcription(*turns):
+    """A transcription result: (speaker, text) turns, one word per second."""
+
+    result_turns = []
+    for number, (speaker, text) in enumerate(turns):
+        start = 10.0 * number
+        result_turns.append(
+            {
+                "speaker": speaker,
+                "words": [
+                    {"text": word, "start": start + index, "end": start + index + 0.8}
+                    for index, word in enumerate(text.split())
+                ],
+            }
+        )
+    return {
+        "source_name": "interview.m4a",
+        "duration": 10.0 * len(turns),
+        "moderator_speaker": 1,
+        "turns": result_turns,
+    }
+
+
 def setUpModule():
     # These tests check Russian interface messages.
     previous = i18n.get_language()
@@ -39,9 +63,10 @@ def tearDownModule():
 class FakeTranscriber:
     def __init__(self):
         self.started = None
+        self.result = None
 
     def status(self):
-        return {"status": "idle"}
+        return {"status": "idle", "result": self.result}
 
     def reset(self):
         return {"ok": True}
@@ -81,12 +106,19 @@ class AppApiTests(unittest.TestCase):
         self.assertEqual(response, {"ok": True})
         self.assertEqual(self.transcriber.started, ([self.media], 4, ""))
 
-    def test_proofreading_is_saved_when_each_call_comes_on_its_own_thread(self):
+    def texts(self, state):
+        return [
+            " ".join(word["text"] for word in turn["words"])
+            for turn in state["transcript"]["changed"]
+        ]
+
+    def test_an_interview_is_created_and_loaded_with_each_call_on_its_own_thread(self):
         # The window runs every call to the application on a new thread.
         # The threads here outlive their calls, so that no two calls can be
         # given the same thread identifier.
         finished = threading.Event()
         self.addCleanup(finished.set)
+        self.addCleanup(self.api._close_interview)
 
         def call(method, *arguments):
             replies = queue.Queue()
@@ -98,16 +130,86 @@ class AppApiTests(unittest.TestCase):
             threading.Thread(target=run, daemon=True).start()
             return replies.get(timeout=10)
 
-        turn = {"id": "t1", "start": 0.0, "end": 1.0, "speaker": 1, "text": "Привет", "words": []}
-        result = {"source_name": self.media.name, "duration": 1.0, "turns": [turn]}
-        self.assertTrue(call(self.api.project_save_transcript, result)["ok"])
+        self.transcriber.result = transcription((1, "Как вас зовут ?"), (2, "Меня зовут Анна.."))
+        created = call(self.api.interview_create, "Guide.", "Notes.")
 
-        saved = call(self.api.project_save_turns, [{**turn, "text": "Привет!"}])
+        self.assertEqual(created.get("error"), None)
+        # Cleanup was applied to the fresh transcription.
+        self.assertEqual(self.texts(created["state"]), ["Как вас зовут?", "Меня зовут Анна…"])
+        self.assertEqual(call(self.api.interview_save_context, "Another guide.", "")["ok"], True)
+        loaded = call(self.api.interview_load)
+        self.assertEqual(loaded["path"], created["path"])
+        self.assertEqual(
+            {key: value for key, value in loaded["state"].items() if key != "transcript"},
+            {"recording": "interview.m4a", "duration": 20.0, "guide": "Another guide.", "notes": ""},
+        )
+        self.assertEqual(self.texts(loaded["state"]), ["Как вас зовут?", "Меня зовут Анна…"])
 
-        self.assertEqual(saved.get("error"), None)
-        loaded = call(self.api.project_load)
-        self.addCleanup(self.api._close_project)
-        self.assertEqual(loaded["state"]["turns"][0]["text"], "Привет!")
+    def test_without_a_finished_transcription_no_interview_is_created(self):
+        reply = self.api.interview_create()
+
+        self.assertFalse(reply["ok"])
+        self.assertEqual(list(Path(self.temporary.name).iterdir()), [self.media])
+
+    def test_a_recording_without_saved_work_has_nothing_to_load(self):
+        self.assertEqual(self.api.interview_load(), {"ok": True, "state": None})
+        self.assertFalse(self.api.interview_save_context("Guide.", "")["ok"])
+        self.assertEqual(list(Path(self.temporary.name).iterdir()), [self.media])
+
+    def test_the_work_opens_without_its_recording(self):
+        self.addCleanup(self.api._close_interview)
+        self.transcriber.result = transcription((1, "Как вас зовут?"))
+        path = self.api.interview_create()["path"]
+        self.media.unlink()
+
+        opened = self.api.interview_open(path)
+
+        self.assertTrue(opened["ok"], opened)
+        self.assertFalse(opened["audio"])
+        self.assertEqual(self.texts(opened["state"]), ["Как вас зовут?"])
+        self.assertIsNone(self.api.selected_media)
+
+    def test_only_a_fully_anonymized_interview_is_exported(self):
+        self.addCleanup(self.api._close_interview)
+        self.transcriber.result = transcription((1, "Как вас зовут?"), (2, "Меня зовут Анна."))
+        self.api.interview_create("", "Notes.")
+        self.assertIn("ещё не", self.api.export_interview()["error"])
+
+        turns = [{"id": 2, "text": "Меня зовут [Персона 1]."}, {"id": 99, "text": "no such turn"}]
+        self.assertTrue(self.api.interview_mark_anonymized(1, turns)["ok"])
+        self.assertIn("1", self.api.export_interview()["error"])
+
+        self.assertTrue(self.api.interview_mark_anonymized(0, turns)["ok"])
+        exported = self.api.export_interview()
+        self.assertTrue(exported["ok"], exported)
+        export = json.loads(Path(exported["path"]).read_text(encoding="utf-8"))
+        self.assertEqual(
+            export["turns"],
+            [
+                {
+                    "id": "2",
+                    "ordinal": 1,
+                    "speaker": 2,
+                    "start": 10.0,
+                    "end": 12.8,
+                    "text": "Меня зовут [Персона 1].",
+                }
+            ],
+        )
+        self.assertEqual(export["notes"], "Notes.")
+        self.assertEqual(export["interview"]["moderator"], 1)
+        self.assertNotIn("Анна", Path(exported["path"]).read_text(encoding="utf-8"))
+
+    def test_choosing_another_recording_closes_the_interview(self):
+        self.transcriber.result = transcription((1, "Как вас зовут?"))
+        self.api.interview_create()
+        other = Path(self.temporary.name, "другое.m4a")
+        other.touch()
+
+        self.assertTrue(self.api.choose_media(str(other))["ok"])
+
+        self.assertIsNone(self.api._interview)
+        self.assertFalse(self.api.interview_save_context("Guide.", "")["ok"])
 
     def test_interface_is_shown_only_once_when_bridge_is_ready(self):
         shown = []
@@ -305,7 +407,7 @@ class StudyLockTests(unittest.TestCase):
         self.addCleanup(remembering.stop)
 
     def tearDown(self):
-        self.api._close_project()
+        self.api._close_interview()
         self.api._close_study()
         self.temporary.cleanup()
 
@@ -313,7 +415,7 @@ class StudyLockTests(unittest.TestCase):
         for reply in (
             self.api.choose_media(str(self.media)),
             self.api.start_transcription(2),
-            self.api.project_open(str(self.folder / "x.interview.alumenans")),
+            self.api.interview_open(str(self.folder / "x.interview.alumenans")),
             self.api.study_add_word("отписка"),
         ):
             with self.subTest(reply=reply):
@@ -390,7 +492,7 @@ class StudyLockTests(unittest.TestCase):
         stray = Path(self.temporary.name, "elsewhere.interview.alumenans")
         stray.write_bytes(b"x" * 32)
 
-        reply = self.api.project_open(str(stray))
+        reply = self.api.interview_open(str(stray))
 
         self.assertFalse(reply["ok"])
         self.assertIn("не в папке", reply["error"])

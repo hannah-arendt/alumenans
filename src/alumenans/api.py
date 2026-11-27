@@ -9,13 +9,14 @@ import urllib.parse
 from pathlib import Path
 
 from alumenans import i18n
-from alumenans.cleanup import unanonymised_files
-from alumenans.current_audio import AUDIO_STATE, audio_parts, set_current_audio
+from alumenans.current_audio import audio_parts, set_current_audio
 from alumenans.detection.subject import set_subject_terms
 from alumenans.i18n import t
+from alumenans.document.transcript import from_machine_turns
 from alumenans.interview_name import group_parts, parse_interview_name, study_title_from
+from alumenans.open_interview import OpenInterview
 from alumenans.paths import state_file
-from alumenans.proofreading import set_study_words
+from alumenans.proofreading import clean, set_study_words
 from alumenans.storage import cipher
 from alumenans.storage.cipher import StudySecret
 from alumenans.storage.exchange import (
@@ -25,19 +26,18 @@ from alumenans.storage.exchange import (
     export_name,
     read_study_file,
 )
-from alumenans.storage.project_store import (
-    ProjectError,
-    ProjectStore,
+from alumenans.storage.interview_store import (
+    Details,
+    InterviewStore,
+    interview_path_for,
     interview_stem,
-    project_path_for,
-    project_summaries,
+    summaries,
 )
 from alumenans.storage.study_store import StudyError, StudyStore, study_path_for
 from alumenans.study_documents import classify_documents, document_kind, read_document
 from alumenans.subject_terms import suggest_from_documents
 from alumenans.transcription.core import (
     TranscriptionError,
-    probe_media_duration,
     validate_media_path,
     validate_speaker_count,
 )
@@ -170,12 +170,12 @@ class AppApi:
         self._ready_callback = ready_callback
         self._interface_ready = False
         self._ready_lock = threading.Lock()
-        self._project = None
-        self._interview_id = ""
-        self._project_pinned = False
+        # The interview being worked on, and the file it is saved to.
+        self._interview = None
+        self._interview_store = None
         self.media_parts = []
         # Re-entrant locks: an ordinary lock would deadlock on a nested call.
-        self._project_lock = threading.RLock()
+        self._interview_lock = threading.RLock()
         self._study = None
         self._study_id = ""
         self._study_folder = None
@@ -184,7 +184,7 @@ class AppApi:
         self._unreadable_projects = []
         self._study_lock = threading.RLock()
 
-    # -- project file ----------------------------------------------------
+    # -- interview file --------------------------------------------------
 
     def _study_gate(self):
         """An error reply until a study folder is chosen and unlocked, else None.
@@ -199,137 +199,171 @@ class AppApi:
             return {"ok": False, "error": t("api.study_locked")}
         return None
 
-    def _project_home(self):
-        """The folder where the project files live: the unlocked study's.
+    def _close_interview(self):
+        if self._interview_store is not None:
+            self._interview_store.close()
+        self._interview = None
+        self._interview_store = None
 
-        Not the recording's folder: the audio file gets deleted, the work
-        doesn't."""
+    def _open_interview(self, path, transcription=None):
+        """Makes the interview in the file at `path` the one being worked
+        on, and returns what the window shows of it; None if the file holds
+        no interview. With `transcription`, a transcription result and the
+        interview's details, the file is started anew from them."""
 
-        if self._study_folder is None or self._study_secret is None:
+        self._close_interview()
+        store = InterviewStore(path, self._study_secret)
+        try:
+            if transcription is not None:
+                result, details = transcription
+                machine = from_machine_turns(result.get("turns") or [])
+                store.create(machine, details)
+                transcript = clean(machine)
+                store.save(transcript, machine)
+            else:
+                transcript = store.load()
+                details = store.details()
+        except BaseException:
+            store.close()
+            raise
+        if transcript is None:
+            store.close()
             return None
-        return Path(self._study_folder)
+        self._interview_store = store
+        self._interview = OpenInterview(store, transcript)
+        return {
+            "recording": details.recording,
+            "duration": details.duration,
+            "guide": details.guide,
+            "notes": details.notes,
+            "transcript": self._interview.view(),
+        }
 
-    def _project_store(self, *, create=True):
-        """The project file is opened on demand.
+    def interview_create(self, guide="", notes=""):
+        """Starts the work on the chosen recording from the transcription
+        that has just finished."""
 
-        Switching recordings must close the previous project: otherwise the
-        edits to one interview would quietly end up in another one's file."""
-
-        if self.selected_media is None:
-            # The work may have been opened without an audio file: it has
-            # been deleted, but proofreading goes on. There is no reason to
-            # close such a project.
-            if self._project is not None and self._project_pinned:
-                return self._project
-            self._close_project()
-            return None
-        home = self._project_home()
-        if home is None:
-            self._close_project()
-            return None
-        target = project_path_for(self.selected_media, home)
-        if self._project is not None and self._project.path == target:
-            return self._project
-        self._close_project()
-        if not create and not target.is_file():
-            return None
-        self._project = ProjectStore(target, self._study_secret)
-        self._project.connect()
-        return self._project
-
-    def _close_project(self):
-        if self._project is not None:
-            try:
-                self._project.close()
-            except Exception:
-                pass
-        self._project = None
-        self._interview_id = ""
-        self._project_pinned = False
-
-    def project_save_transcript(self, result, guide="", notes="", speaker_count=None):
-        """Puts a fresh transcript into the project file next to the recording."""
-
-        with self._project_lock:
+        with self._interview_lock:
             gate = self._study_gate()
             if gate is not None:
                 return gate
-            store = self._project_store()
-            if store is None:
+            result = self.transcriber.status().get("result")
+            if self.selected_media is None or not result:
                 return {"ok": False, "error": t("api.no_source_audio")}
+            path = interview_path_for(self.selected_media, self._study_folder)
+            details = Details(
+                recording=str(result.get("source_name") or ""),
+                duration=float(result.get("duration") or 0.0),
+                moderator=result.get("moderator_speaker"),
+                guide=str(guide or ""),
+                notes=str(notes or ""),
+            )
             try:
-                self._interview_id = store.save_transcript(
-                    result if isinstance(result, dict) else {},
-                    source_path=self.selected_media,
-                    guide=str(guide or ""),
-                    notes=str(notes or ""),
-                    speaker_count=speaker_count,
-                )
-            except (ProjectError, Exception) as error:
-                return _failed(error)
-            return {
-                "ok": True,
-                "interview_id": self._interview_id,
-                "path": str(store.path),
-            }
-
-    def project_save_turns(self, turns, guide=None, notes=None):
-        """Autosave for proofreading: turns, topics and context."""
-
-        with self._project_lock:
-            store = self._project_store()
-            if store is None or not self._interview_id:
-                return {"ok": False, "error": t("api.no_project")}
-            try:
-                saved = store.save_turns(
-                    self._interview_id,
-                    turns if isinstance(turns, list) else [],
-                )
-                if guide is not None or notes is not None:
-                    store.save_context(
-                        self._interview_id,
-                        guide=None if guide is None else str(guide),
-                        notes=None if notes is None else str(notes),
-                    )
+                state = self._open_interview(path, (result, details))
             except Exception as error:
                 return _failed(error)
-            return {"ok": True, "turns": saved, "path": str(store.path)}
+            return {"ok": True, "state": state, "path": str(path)}
 
-    def project_record_decision(self, decision):
-        with self._project_lock:
-            store = self._project_store()
-            if store is None or not self._interview_id:
-                return {"ok": False, "error": t("api.no_project")}
-            payload = decision if isinstance(decision, dict) else {}
+    def interview_load(self):
+        """Opens the work saved for the chosen recording, if there is any."""
+
+        with self._interview_lock:
+            self._close_interview()
+            if self.selected_media is None or self._study_gate() is not None:
+                return {"ok": True, "state": None}
+            path = interview_path_for(self.selected_media, self._study_folder)
+            if not path.is_file():
+                return {"ok": True, "state": None}
             try:
-                store.record_decision(
-                    self._interview_id,
-                    turn_id=str(payload.get("turn_id") or ""),
-                    kind=str(payload.get("kind") or ""),
-                    fragment=str(payload.get("fragment") or ""),
-                    action=str(payload.get("action") or ""),
-                    replacement=str(payload.get("replacement") or ""),
+                state = self._open_interview(path)
+            except Exception as error:
+                return _failed(error)
+            return {"ok": True, "state": state, "path": str(path)}
+
+    def interview_open(self, path=""):
+        """Opens the work on an interview whose recording no longer exists.
+
+        A recording is deleted as soon as the interview has been processed.
+        The transcript and the anonymization key outlive it, and the person
+        must be able to get to them without the audio."""
+
+        target = Path(str(path or "")).expanduser()
+        gate = self._study_gate()
+        if gate is not None:
+            return gate
+        with self._interview_lock:
+            if not target.is_file():
+                return {"ok": False, "error": t("api.work_file_not_found")}
+            # The key belongs to the study: a file from elsewhere won't open
+            # with it, and would be saved outside the study.
+            if target.parent.resolve() != Path(self._study_folder).resolve():
+                return {"ok": False, "error": t("api.work_outside_study")}
+            if self.transcriber.status()["status"] in {"running", "cancelling"}:
+                return {"ok": False, "error": t("api.stop_transcription_first")}
+            self.transcriber.reset()
+            self.selected_media = None
+            self.media_parts = []
+            set_current_audio(None)
+            try:
+                state = self._open_interview(target)
+            except Exception as error:
+                return _failed(error)
+            return {"ok": True, "state": state, "path": str(target), "audio": False}
+
+    def interview_save_context(self, guide="", notes=""):
+        """Saves the guide and the notes the person wrote for this interview."""
+
+        with self._interview_lock:
+            if self._interview is None:
+                return {"ok": False, "error": t("api.no_project")}
+            try:
+                self._interview_store.save_context(str(guide or ""), str(notes or ""))
+            except Exception as error:
+                return _failed(error)
+            return {"ok": True}
+
+    def interview_mark_anonymized(self, left=0, turns=None):
+        """Records that anonymization was carried through, with the
+        anonymized text of each turn: that text is what gets exported, not
+        the original. `left` is the number of findings still undecided."""
+
+        with self._interview_lock:
+            if self._interview is None:
+                return {"ok": False, "error": t("api.no_project")}
+            transcript = self._interview.transcript
+            anonymized = []
+            for item in turns or []:
+                index = transcript.turn_indexes.get(item.get("id"))
+                if index is None:
+                    continue
+                turn = transcript.turns[index]
+                anonymized.append(
+                    {
+                        "id": turn.id,
+                        "ordinal": index,
+                        "speaker": turn.speaker,
+                        "start": turn.start,
+                        "end": turn.end,
+                        "text": str(item.get("text") or ""),
+                    }
                 )
+            try:
+                self._interview_store.save_anonymized(anonymized, max(0, int(left)))
             except Exception as error:
                 return _failed(error)
             return {"ok": True}
 
     def _keep_key_archive(self, archive, entries):
-        """Puts the encrypted key into the project — the very same archive.
+        """Puts the encrypted key into the interview file: the very same
+        archive that went to disk, never the key in plain text."""
 
-        The key never goes into the project file in plain text at all: such a
-        file gets passed to a colleague, and a key inside it would undo the
-        anonymisation entirely."""
-
-        with self._project_lock:
-            store = self._project_store()
-            if store is None or not self._interview_id:
+        with self._interview_lock:
+            if self._interview is None:
                 return False
             try:
-                store.save_anonymization_key(
-                    self._interview_id, archive, entries=int(entries or 0)
-                )
+                self._interview_store.save_key_archive(archive, int(entries or 0))
             except Exception:
+                log.exception("the key archive was not kept in the interview file")
                 return False
             return True
 
@@ -417,19 +451,19 @@ class AppApi:
             item["number"] = item["number"] or parsed.number
             item["respondent"] = item["respondent"] or parsed.respondent
 
-        summaries, unreadable = project_summaries(self._study_folder, self._study_secret)
+        found_interviews, unreadable = summaries(self._study_folder, self._study_secret)
         self._unreadable_projects = [
             t("api.unreadable_interview", name=item["name"], error=item["error"])
             for item in unreadable
         ]
-        for summary in summaries:
-            source = summary["source_name"] or Path(summary["path"]).stem
+        for summary in found_interviews:
+            source = summary["recording"] or Path(summary["path"]).stem
             item = slot(parse_interview_name(source).key)
             describe(item, source)
             item["project"] = summary["path"]
             item["turns"] = summary["turns"]
             item["edited"] = summary["edited"]
-            item["anonymized"] = summary["anonymized"]
+            item["anonymized"] = summary["key_entries"]
             item["duration"] = summary["duration"]
 
         for group in group_parts(found):
@@ -470,9 +504,9 @@ class AppApi:
             return {"ok": False, "error": t("api.folder_open_failed")}
         if self.transcriber.status()["status"] in {"running", "cancelling"}:
             return {"ok": False, "error": t("api.stop_transcription_first")}
-        # Project first, then study: the order export_interview takes them in.
-        with self._project_lock:
-            self._close_project()
+        # Interview first, then study: the order export_interview takes them in.
+        with self._interview_lock:
+            self._close_interview()
             self.selected_media = None
             self.media_parts = []
             set_current_audio(None)
@@ -825,18 +859,23 @@ class AppApi:
         that the lead put in the same folder: the network is none of the
         program's business."""
 
-        with self._project_lock:
-            store = self._project_store(create=False)
-            if store is None or not self._interview_id:
+        with self._interview_lock:
+            if self._interview is None:
                 return {"ok": False, "error": t("api.interview_not_open")}
             try:
-                state = store.anonymization_state(self._interview_id)
-                if not state["done"]:
-                    return {"ok": False, "error": state["reason"]}
-                turns = store.anonymized_turns(self._interview_id)
-                interview = store.load(self._interview_id) or {}
+                anonymized = self._interview_store.anonymized()
+                details = self._interview_store.details()
             except Exception as error:
                 return _failed(error)
+        # A transcript that is not anonymized must not leave the device:
+        # quotes from it spread into reports and can never be pulled back.
+        if anonymized is None:
+            return {"ok": False, "error": t("project.not_anonymized")}
+        if anonymized["unresolved"] > 0:
+            return {
+                "ok": False,
+                "error": t("project.unresolved", count=anonymized["unresolved"]),
+            }
 
         with self._study_lock:
             study_store = self._study_store(create=False)
@@ -846,9 +885,8 @@ class AppApi:
         if folder is None:
             return {"ok": False, "error": t("api.no_study_folder")}
 
-        parsed_name = parse_interview_name(
-            interview.get("source_name") or (self.selected_media or "")
-        )
+        recording = details.recording or self.selected_media or ""
+        parsed_name = parse_interview_name(recording)
         try:
             export = build_export(
                 study={
@@ -857,19 +895,17 @@ class AppApi:
                     "issued_at": version.get("issued_at", ""),
                 },
                 interview={
-                    "key": interview_stem(
-                        interview.get("source_name") or (self.selected_media or "")
-                    ),
+                    "key": interview_stem(recording),
                     "study": parsed_name.study,
                     "interviewer": parsed_name.interviewer,
                     "number": parsed_name.number,
                     "respondent": parsed_name.respondent,
-                    "duration": interview.get("duration") or 0.0,
-                    "moderator": interview.get("moderator_speaker"),
-                    "anonymized_at": state.get("anonymized_at"),
+                    "duration": details.duration,
+                    "moderator": details.moderator,
+                    "anonymized_at": anonymized["finished_at"],
                 },
-                turns=turns,
-                notes=interview.get("notes") or "",
+                turns=anonymized["turns"],
+                notes=details.notes,
                 coder=self.researcher_name(),
             )
             destination = folder / export_name(export["interview"]["key"])
@@ -905,37 +941,6 @@ class AppApi:
             except Exception as error:
                 return _failed(error)
             return {"ok": True, "path": str(store.path)}
-
-    def study_register(self, branch="", branch_title="", attributes=None):
-        """Registers the interview in the series together with its branch and case card."""
-
-        with self._study_lock:
-            store = self._study_store()
-            if store is None or self.selected_media is None:
-                return {"ok": False, "error": t("api.no_recording_or_study")}
-            if not self._interview_id:
-                return {"ok": False, "error": t("api.no_interview_project")}
-            try:
-                parsed = parse_interview_name(self.selected_media)
-                store.register_interview(
-                    self._study_id,
-                    interview_id=self._interview_id,
-                    label=parsed.label,
-                    source_name=Path(self.selected_media).name,
-                    source_path=str(self.selected_media),
-                    project_path=str(
-                        project_path_for(self.selected_media, self._project_home())
-                    ),
-                    duration=probe_media_duration(self.selected_media) or 0.0,
-                )
-                if branch:
-                    store.save_branch(self._interview_id, branch, branch_title)
-                if attributes:
-                    store.save_case_attributes(self._interview_id, attributes)
-                interviews = store.interviews(self._study_id)
-            except Exception as error:
-                return _failed(error)
-            return {"ok": True, "interviews": interviews}
 
     LAST_FOLDER = state_file(".last-folder", legacy=".последняя-папка")
 
@@ -1045,152 +1050,6 @@ class AppApi:
                 return _failed(error)
             return {"ok": True}
 
-    def project_load(self):
-        """Returns unfinished work on the selected recording, if there is any."""
-
-        with self._project_lock:
-            store = self._project_store(create=False)
-            if store is None:
-                return {"ok": True, "state": None}
-            try:
-                state = store.load()
-            except Exception as error:
-                return _failed(error)
-            if state:
-                self._interview_id = state["interview_id"]
-            return {"ok": True, "state": state, "path": str(store.path)}
-
-    def project_mark_anonymized(self, left=0, turns=None):
-        """Marks the anonymisation as finished.
-
-        Along with the mark comes the anonymised text, turn by turn: that is
-        what gets exported, not the original."""
-
-        with self._project_lock:
-            store = self._project_store()
-            if store is None or not self._interview_id:
-                return {"ok": False, "error": t("api.no_project")}
-            try:
-                if isinstance(turns, list) and turns:
-                    store.save_anonymized_turns(self._interview_id, turns)
-                store.mark_anonymized(self._interview_id, left=left)
-                state = store.anonymization_state(self._interview_id)
-            except Exception as error:
-                return _failed(error)
-            return {"ok": True, "state": state}
-
-    def cleanup_preview(self):
-        """What would be left of the non-anonymised text if it were removed.
-
-        Shown as a list before deletion: deletion is irreversible, and our
-        own rule "we never change anything silently" matters most of all
-        here — this is the most silent change the program could possibly
-        make."""
-
-        with self._project_lock:
-            store = self._project_store(create=False)
-            if store is None or not self._interview_id:
-                return {"ok": True, "ready": False, "files": [], "inside": {}}
-            try:
-                state = store.anonymization_state(self._interview_id)
-                inside = store.original_text_traces(self._interview_id)
-                ready = bool(state["done"]) and bool(
-                    store.anonymized_turns(self._interview_id)
-                )
-            except Exception as error:
-                return _failed(error)
-
-        files = [str(path) for path in self._own_leftovers()]
-        # Words don't count: they are not deleted but transplanted onto the
-        # anonymised text, and after the cleanup they stay where they are.
-        remaining = bool(files) or bool(inside["turns"]) or bool(inside["decisions"])
-        return {
-            "ok": True,
-            "ready": ready,
-            "left": remaining,
-            "files": files,
-            "inside": inside,
-        }
-
-    def _own_leftovers(self):
-        """Files of this interview that the program saved itself."""
-
-        folder = self._study_folder or (
-            Path(self.selected_media).parent if self.selected_media else None
-        )
-        bases = [Path(path).stem for path in (AUDIO_STATE.get("paths") or [])]
-        if self.selected_media:
-            bases.append(Path(self.selected_media).stem)
-        return unanonymised_files(folder, dict.fromkeys(bases))
-
-    def cleanup_run(self):
-        """Removes the non-anonymised text. Leaves the audio file alone."""
-
-        with self._project_lock:
-            store = self._project_store(create=False)
-            if store is None or not self._interview_id:
-                return {"ok": False, "error": t("api.interview_not_open")}
-            try:
-                state = store.anonymization_state(self._interview_id)
-                if not state["done"]:
-                    return {"ok": False, "error": state["reason"]}
-                if not store.anonymized_turns(self._interview_id):
-                    return {
-                        "ok": False,
-                        "error": t("api.cannot_forget_original"),
-                    }
-                removed = store.forget_original_text(self._interview_id)
-            except Exception as error:
-                return _failed(error)
-
-        deleted = []
-        for path in self._own_leftovers():
-            try:
-                path.unlink()
-                deleted.append(path.name)
-            except OSError:
-                continue
-        return {"ok": True, "removed": deleted, "inside": removed}
-
-    def project_open(self, path=""):
-        """Opens the work on an interview whose recording no longer exists.
-
-        The team has no intention of keeping a corpus of audio: a recording
-        is deleted as soon as the interview has been processed. The
-        transcript, the proofreading decisions and the anonymisation key
-        survive the deletion, and the person must be able to get to them
-        without the audio file — otherwise there is no point in keeping them."""
-
-        target = Path(str(path or "")).expanduser()
-        gate = self._study_gate()
-        if gate is not None:
-            return gate
-        with self._project_lock:
-            if not target.is_file():
-                return {"ok": False, "error": t("api.work_file_not_found")}
-            # The key belongs to the study: a work file from elsewhere won't
-            # open with it, and would be saved outside the study.
-            if target.parent.resolve() != Path(self._study_folder).resolve():
-                return {"ok": False, "error": t("api.work_outside_study")}
-            if self.transcriber.status()["status"] in {"running", "cancelling"}:
-                return {"ok": False, "error": t("api.stop_transcription_first")}
-            self.transcriber.reset()
-            self._close_project()
-            self.selected_media = None
-            self.media_parts = []
-            set_current_audio(None)
-            try:
-                self._project = ProjectStore(target, self._study_secret)
-                self._project.connect()
-                state = self._project.load()
-            except Exception as error:
-                self._close_project()
-                return _failed(error)
-            self._project_pinned = True
-            if state:
-                self._interview_id = state["interview_id"]
-            return {"ok": True, "state": state, "path": str(target), "audio": False}
-
     def bind_window(self, window):
         self.window = window
 
@@ -1290,8 +1149,8 @@ class AppApi:
         if gate is not None:
             return gate
         self.transcriber.reset()
-        with self._project_lock:
-            self._close_project()
+        with self._interview_lock:
+            self._close_interview()
         # The parts of an interrupted interview are all taken at once: it is
         # one conversation, and transcribing it in halves means getting two
         # different «Спикеров 1» ("Speaker 1"s) and turn numbering starting
@@ -1316,7 +1175,7 @@ class AppApi:
             "duration": sum(item["duration"] for item in file_parts),
             "audio_token": set_current_audio(paths),
             "parts": file_parts,
-            "project": str(project_path_for(paths[0], self._project_home())),
+            "project": str(interview_path_for(paths[0], self._study_folder)),
         }
 
     def start_transcription(self, speaker_count=2, guide=""):
@@ -1347,8 +1206,8 @@ class AppApi:
         if result.get("ok"):
             self.selected_media = None
             set_current_audio(None)
-            with self._project_lock:
-                self._close_project()
+            with self._interview_lock:
+                self._close_interview()
         return result
 
     @staticmethod

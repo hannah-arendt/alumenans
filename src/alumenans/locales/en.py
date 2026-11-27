@@ -3,7 +3,6 @@
 """Interface messages, English. Keys must match the other catalogs (tests/test_i18n.py)."""
 
 MESSAGES = {
-    'api.cannot_forget_original': 'There is no anonymized text — the original cannot be deleted.',
     'api.choose_media_first': 'Choose an audio or video file first.',
     'api.choose_recording_first': 'Choose a recording first.',
     'api.choose_study_first': 'Choose the study folder first.',
@@ -17,7 +16,6 @@ MESSAGES = {
     'api.interview_not_open': 'No interview is open.',
     'api.key_needs_password': 'The key is not saved without a password.',
     'api.no_audio': 'The source audio file was not found.',
-    'api.no_interview_project': 'The interview project has not been created yet.',
     'api.no_new_words': 'The list of new words is empty.',
     'api.no_project': 'The project has not been created yet.',
     'api.no_recording_or_study': 'No recording or study selected.',
@@ -67,10 +65,7 @@ MESSAGES = {
     'naming.bad_pattern': 'Name does not follow the pattern “Study-Interviewer-Number-Pseudonym”: {names}',
     'naming.duplicate_number': 'Number {number} is used for different respondents: {names}',
     'naming.missing_numbers': 'The folder has no interviews with numbers: {numbers}',
-    'project.key_must_be_encrypted': 'The key can only be saved encrypted.',
-    'project.missing_anonymized': 'Not every turn has anonymized text ({count} without it). Save the anonymization again.',
     'project.not_anonymized': 'Anonymization has not been done yet.',
-    'project.not_transcribed': 'The interview has not been transcribed yet.',
     'project.open_failed': 'Could not open the project file: {error}',
     'project.other_version': 'This interview file was made by another version of the program and cannot be opened.',
     'project.unresolved': 'Unresolved anonymization findings left: {count}.',

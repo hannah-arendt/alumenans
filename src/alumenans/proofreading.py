@@ -653,7 +653,7 @@ def _coerce_turns(turns: Iterable[dict]) -> list[dict]:
         words = raw.get("words") if isinstance(raw.get("words"), list) else []
         result.append(
             {
-                "id": str(raw.get("id") or _turn_id(raw, index)),
+                "id": raw.get("id") or _turn_id(raw, index),
                 "start": start,
                 "end": end,
                 "speaker": speaker,

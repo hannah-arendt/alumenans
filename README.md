@@ -347,10 +347,11 @@ of the word they replace, using Natasha morphology and pymorphy3.
 
 All of it uses SQLite and the standard library only.
 
-- **`project_store.py`**: one project file per interview. It lives in the
+- **`interview_store.py`**: one file per interview. It lives in the
   study folder, not next to the audio, so it survives deleting the
-  recording. Turn IDs come from the audio rather than the text, so
-  decisions stay attached when the text is edited.
+  recording. It holds the transcript as transcription returned it, the
+  transcript as it stands now, the interview's guide and notes, the
+  anonymized text and the encrypted key archive.
 - **`study_store.py`**: data shared across a series of interviews. That
   covers the guide, the study documents and the explicit "do not
   anonymize" list. The app may suggest entries for that list but must
@@ -424,7 +425,7 @@ packaging/
   file stay Russian.
   The choice is stored in `.ui-language`, and child processes get it in
   `ALUMENANS_UI_LANGUAGE`.
-- **Imports are absolute:** `from alumenans.storage.project_store import …`.
+- **Imports are absolute:** `from alumenans.storage.interview_store import …`.
   Mock targets use the full dotted path, e.g.
   `patch("alumenans.launch.subprocess.run")`.
 - **Dependencies:**

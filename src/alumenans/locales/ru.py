@@ -3,7 +3,6 @@
 """Interface messages, Russian. Keys must match the other catalogs (tests/test_i18n.py)."""
 
 MESSAGES = {
-    'api.cannot_forget_original': 'Анонимизированного текста нет — удалять исходный нельзя.',
     'api.choose_media_first': 'Сначала выберите аудио или видео.',
     'api.choose_recording_first': 'Сначала выберите запись.',
     'api.choose_study_first': 'Сначала выберите папку исследования.',
@@ -17,7 +16,6 @@ MESSAGES = {
     'api.interview_not_open': 'Интервью не открыто.',
     'api.key_needs_password': 'Без пароля ключ не сохраняем.',
     'api.no_audio': 'Не найден исходный аудиофайл.',
-    'api.no_interview_project': 'Проект интервью ещё не создан.',
     'api.no_new_words': 'Список новых слов пуст.',
     'api.no_project': 'Проект ещё не создан.',
     'api.no_recording_or_study': 'Нет выбранной записи или исследования.',
@@ -67,10 +65,7 @@ MESSAGES = {
     'naming.bad_pattern': 'Имя не по образцу «Исследование-Интервьюер-Номер-Псевдоним»: {names}',
     'naming.duplicate_number': 'Номер {number} стоит у разных респондентов: {names}',
     'naming.missing_numbers': 'В папке нет интервью с номерами: {numbers}',
-    'project.key_must_be_encrypted': 'Ключ можно сохранить только зашифрованным.',
-    'project.missing_anonymized': 'Не у всех реплик есть анонимизированный текст (без него {count}). Сохраните анонимизацию заново.',
     'project.not_anonymized': 'Анонимизация ещё не проведена.',
-    'project.not_transcribed': 'Интервью ещё не расшифровано.',
     'project.open_failed': 'Не удалось открыть проектный файл: {error}',
     'project.other_version': 'Этот файл интервью создан другой версией программы, открыть его нельзя.',
     'project.unresolved': 'В анонимизации осталось нерешённых находок: {count}.',

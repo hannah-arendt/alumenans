@@ -1,6 +1,7 @@
 """The interview file: the transcript goes in and comes out unchanged."""
 
 import random
+import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
@@ -9,14 +10,16 @@ from alumenans import i18n
 from alumenans.document.editing import MergeTurns, SetSpeaker, SplitTurn, apply, retext
 from alumenans.document.transcript import from_machine_turns, validate
 from alumenans.storage.cipher import StudySecret
+from alumenans.storage.study_store import STUDY_FILE_NAME
 from alumenans.storage import cipher
 from alumenans.storage.interview_store import (
     Details,
     InterviewFileError,
     InterviewStore,
+    interview_path_for,
+    summaries,
     summarize,
 )
-from alumenans.storage.project_store import ProjectStore
 
 
 def setUpModule():
@@ -138,8 +141,11 @@ class InterviewStoreTests(unittest.TestCase):
 
     def test_a_file_made_by_an_earlier_version_is_refused(self):
         self.store.close()
-        old = ProjectStore(self.path, self.secret)
-        old.connect()
+        old = cipher.connect(self.path, self.secret)
+        old.executescript(
+            "CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);"
+            "INSERT INTO meta VALUES ('schema', '1');"
+        )
         old.close()
         with self.assertRaisesRegex(InterviewFileError, "another version"):
             InterviewStore(self.path, self.secret).connect()
@@ -213,6 +219,58 @@ class InterviewStoreTests(unittest.TestCase):
         other = InterviewStore(self.path, StudySecret(b"s" * 16, b"x" * 32))
         with self.assertRaises(InterviewFileError):
             other.connect()
+
+
+class FolderTests(unittest.TestCase):
+    """Where interview files are, and which of them a study can read."""
+
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        self.home = Path(self.temporary.name)
+        self.secret = StudySecret(b"s" * 16, b"k" * 32)
+
+    def save(self, recording, secret):
+        store = InterviewStore(interview_path_for(self.home / recording, self.home), secret)
+        store.create(machine_transcript(), Details(recording, 31.5))
+        store.close()
+
+    def test_the_file_is_named_after_the_recording_and_lives_in_the_study(self):
+        self.assertEqual(
+            interview_path_for("/audio/interview-3.mp3", "/study"),
+            Path("/study/interview-3.interview.alumenans"),
+        )
+
+    def test_no_recording_name_turns_into_the_study_file(self):
+        for recording in ("study.mp3", "Study.m4a", "STUDY.wav"):
+            with self.subTest(recording=recording):
+                path = interview_path_for(f"/audio/{recording}", "/study")
+                self.assertNotEqual(path.name.casefold(), STUDY_FILE_NAME.casefold())
+
+    def test_the_listing_finds_interviews_and_skips_the_study_file(self):
+        (self.home / STUDY_FILE_NAME).write_bytes(b"study")
+        self.save("interview-1.mp3", self.secret)
+        found, unreadable = summaries(self.home, self.secret)
+        self.assertEqual([item["recording"] for item in found], ["interview-1.mp3"])
+        self.assertEqual(unreadable, [])
+        # Reading the list leaves no "-wal" or "-shm" files behind.
+        self.assertEqual(
+            sorted(item.name for item in self.home.iterdir()),
+            sorted(["interview-1.interview.alumenans", STUDY_FILE_NAME]),
+        )
+
+    def test_files_that_cannot_be_read_are_reported_and_not_dropped(self):
+        self.save("mine.mp3", self.secret)
+        self.save("theirs.mp3", StudySecret(b"t" * 16, b"k" * 32))
+        plain = interview_path_for(self.home / "old.mp3", self.home)
+        sqlite3.connect(plain).execute("CREATE TABLE t (x)").connection.close()
+        found, unreadable = summaries(self.home, self.secret)
+        self.assertEqual([item["recording"] for item in found], ["mine.mp3"])
+        self.assertEqual(
+            sorted(item["name"] for item in unreadable),
+            [plain.name, "theirs.interview.alumenans"],
+        )
+        self.assertTrue(all(item["error"] for item in unreadable))
 
 
 if __name__ == "__main__":

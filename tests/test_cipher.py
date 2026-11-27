@@ -13,7 +13,8 @@ from unittest.mock import patch
 from alumenans import i18n
 from alumenans.storage import cipher
 from alumenans.storage.cipher import StudySecret
-from alumenans.storage.project_store import ProjectError, ProjectStore
+from alumenans.document.transcript import from_machine_turns
+from alumenans.storage.interview_store import Details, InterviewFileError, InterviewStore
 from alumenans.storage.study_store import STUDY_FILE_NAME, StudyStore
 
 NAME = "Мария Ивановна Соколова"
@@ -23,15 +24,23 @@ def a_secret():
     return StudySecret(os.urandom(16), os.urandom(32))
 
 
-def transcript(text=NAME):
-    return {
-        "source_name": "interview-1.mp3",
-        "duration": 2.0,
-        "turns": [
-            {"id": "t1", "start": 0, "end": 1, "speaker": 1, "text": "Как вас зовут?"},
-            {"id": "t2", "start": 1, "end": 2, "speaker": 2, "text": f"Меня зовут {text}."},
-        ],
-    }
+def transcript():
+    def turn(speaker, text, start):
+        return {
+            "speaker": speaker,
+            "words": [
+                {"text": word, "start": start + index, "end": start + index + 0.5}
+                for index, word in enumerate(text.split())
+            ],
+        }
+
+    return from_machine_turns([turn(1, "Как вас зовут?", 0.0), turn(2, f"Меня зовут {NAME}.", 5.0)])
+
+
+def save_interview(path, secret):
+    store = InterviewStore(path, secret)
+    store.create(transcript(), Details("interview-1.mp3", 10.0))
+    return store
 
 
 def on_disk(path):
@@ -120,44 +129,41 @@ class EncryptedFileTests(unittest.TestCase):
         self.assertEqual(connection.execute("SELECT text FROM note").fetchall(), [("saved",)])
 
     def test_a_transcript_reads_back(self):
-        store = ProjectStore(self.path, self.secret)
-        interview_id = store.save_transcript(transcript())
-        store.close()
+        save_interview(self.path, self.secret).close()
 
-        again = ProjectStore(self.path, self.secret)
+        again = InterviewStore(self.path, self.secret)
         try:
-            state = again.load(interview_id)
+            loaded = again.load()
         finally:
             again.close()
-        self.assertIn(NAME, state["turns"][1]["text"])
+        self.assertIn(NAME, loaded.turns[1].text)
 
     def test_nothing_readable_is_on_disk_even_in_the_wal(self):
-        store = ProjectStore(self.path, self.secret)
+        store = save_interview(self.path, self.secret)
         try:
-            store.save_transcript(transcript())
             # Still open, as after a crash: the newest pages are in the WAL.
             self.assertTrue(self.path.with_name(self.path.name + "-wal").is_file())
             data = on_disk(self.path)
         finally:
             store.close()
 
-        self.assertNotIn(NAME.encode("utf-8"), data)
+        for word in NAME.split():
+            self.assertNotIn(word.encode("utf-8"), data)
         self.assertNotIn(b"SQLite format 3", data)
         self.assertEqual(self.path.read_bytes()[:16], self.secret.salt)
 
     def test_a_copy_left_by_a_crash_opens_with_the_key(self):
-        store = ProjectStore(self.path, self.secret)
+        store = save_interview(self.path, self.secret)
         try:
-            interview_id = store.save_transcript(transcript())
             copy = self.folder / "copy.interview.alumenans"
             for end in ("", "-wal", "-shm"):
                 shutil.copyfile(f"{self.path}{end}", f"{copy}{end}")
         finally:
             store.close()
 
-        again = ProjectStore(copy, self.secret)
+        again = InterviewStore(copy, self.secret)
         try:
-            self.assertIn(NAME, again.load(interview_id)["turns"][1]["text"])
+            self.assertIn(NAME, again.load().turns[1].text)
         finally:
             again.close()
 
@@ -168,14 +174,12 @@ class EncryptedFileTests(unittest.TestCase):
 
         with self.assertRaises(cipher.WrongPassword):
             cipher.connect(self.path, wrong)
-        with self.assertRaises(ProjectError) as raised:
-            ProjectStore(self.path, wrong).connect()
+        with self.assertRaises(InterviewFileError) as raised:
+            InterviewStore(self.path, wrong).connect()
         self.assertEqual(str(raised.exception), "Неверный пароль.")
 
     def test_a_file_of_another_study_is_told_apart(self):
-        store = ProjectStore(self.path, a_secret())
-        store.save_transcript(transcript())
-        store.close()
+        save_interview(self.path, a_secret()).close()
 
         with self.assertRaises(cipher.OtherStudy):
             cipher.connect(self.path, self.secret)
@@ -193,29 +197,6 @@ class EncryptedFileTests(unittest.TestCase):
 
         with self.assertRaises(cipher.NotAStudyFile):
             StudySecret.for_file(self.path, "пароль")
-
-    def test_forgetting_the_original_keeps_the_file_encrypted(self):
-        store = ProjectStore(self.path, self.secret)
-        try:
-            interview_id = store.save_transcript(transcript())
-            store.save_anonymized_turns(
-                interview_id,
-                [
-                    {"id": "t1", "text": "Как вас зовут?"},
-                    {"id": "t2", "text": "Меня зовут [ИМЯ]."},
-                ],
-            )
-            store.forget_original_text(interview_id)
-        finally:
-            store.close()
-
-        self.assertNotIn(NAME.encode("utf-8"), on_disk(self.path))
-        self.assertEqual(self.path.read_bytes()[:16], self.secret.salt)
-        again = ProjectStore(self.path, self.secret)
-        try:
-            self.assertIn("[ИМЯ]", again.load(interview_id)["turns"][1]["text"])
-        finally:
-            again.close()
 
     def test_the_study_file_is_encrypted_with_the_same_secret(self):
         path = self.folder / STUDY_FILE_NAME

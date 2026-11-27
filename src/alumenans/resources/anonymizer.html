@@ -2295,7 +2295,7 @@ function startProjectOnce(result){
   TRANSCRIBER.projectStarted = true;
   PROJECT.candidate = null;
   renderResumePrompt();
-  void createProject(result);
+  PROJECT.creating = createProject();
 }
 
 async function appCall(method, ...args){
@@ -2452,6 +2452,8 @@ async function chooseMedia(){
     TRANSCRIBER.maxProgress = 0;
     TRANSCRIBER.projectStarted = false;
     PROJECT.ready = false;
+    PROJECT.state = null;
+    PROJECT.creating = null;
     PROJECT.path = selected.project || "";
     PROJECT.error = "";
     resetProofreading();
@@ -2495,6 +2497,8 @@ async function resetTranscription(){
   TRANSCRIBER.maxProgress = 0;
   TRANSCRIBER.projectStarted = false;
   PROJECT.ready = false;
+  PROJECT.state = null;
+  PROJECT.creating = null;
   PROJECT.path = "";
   PROJECT.candidate = null;
   clearTimeout(PROJECT.saveTimer);
@@ -2560,12 +2564,14 @@ function proofFileName(sourceName){
 
 /* ---------- project file ---------- */
 
-/* The state of the work lives not in the window's memory but in a file next to the recording.
-   A two-hour interview and an hour of proofreading no longer vanish with the window. */
+/* The work on an interview lives in its file, which the application keeps:
+   the window asks for it and shows it. */
 
 const PROJECT = {
   ready:false,
   path:"",
+  state:null,
+  creating:null,
   saveTimer:null,
   saving:false,
   again:false,
@@ -2573,54 +2579,42 @@ const PROJECT = {
   candidate:null
 };
 
-function projectTurnsPayload(){
-  return PROOF.turns.map(turn => ({
-    id:turn.id,
-    start:turn.start,
-    end:turn.end,
-    speaker:turn.speaker,
-    text:turn.text,
-    topic_start:!!turn.topic_start,
-    topic_reason:turn.topic_reason || null,
-    topic_title:turn.topic_title || "",
-    manually_edited:PROOF.manuallyEdited.has(turn.id),
-    words:turn.words || []
-  }));
+/* The turns of an interview as the application gave them, each with its text. */
+function turnsFromTranscript(transcript){
+  const turns = new Map(transcript.changed.map(turn => [turn.id, turn]));
+  return transcript.order.map(id => {
+    const turn = turns.get(id);
+    return {...turn, text:turn.words.map(word => word.text).join(" ")};
+  });
 }
 
-async function createProject(result){
-  if (!result || !(result.turns || []).length) return;
+async function createProject(){
   try {
     const saved = await appCall(
-      "project_save_transcript",
-      result,
+      "interview_create",
       $("interviewGuide").value.trim(),
-      $("interviewNotes").value.trim(),
-      Number($("speakerCount").value) || null
+      $("interviewNotes").value.trim()
     );
     PROJECT.ready = !!saved.ok;
+    PROJECT.state = saved.state || null;
     PROJECT.path = saved.path || "";
     PROJECT.error = saved.ok ? "" : (saved.error || "");
   } catch (error){
     PROJECT.ready = false;
+    PROJECT.state = null;
     PROJECT.error = error.message || String(error);
   }
 }
 
 async function saveProjectNow(){
-  if (!PROJECT.ready || !PROOF.turns.length) return;
+  if (!PROJECT.ready) return;
   if (PROJECT.saving){
     PROJECT.again = true;
     return;
   }
   PROJECT.saving = true;
   try {
-    const saved = await appCall(
-      "project_save_turns",
-      projectTurnsPayload(),
-      PROOF.guide,
-      PROOF.notes
-    );
+    const saved = await appCall("interview_save_context", PROOF.guide, PROOF.notes);
     PROJECT.error = saved.ok ? "" : (saved.error || "");
   } catch (error){
     PROJECT.error = error.message || String(error);
@@ -2639,38 +2633,19 @@ function scheduleProjectSave(){
   PROJECT.saveTimer = setTimeout(() => void saveProjectNow(), 1200);
 }
 
-async function recordProjectDecision(issue, action, replacement=""){
-  if (!PROJECT.ready) return;
-  try {
-    await appCall("project_record_decision", {
-      turn_id:issue.turn_id || "",
-      kind:issue.kind || "",
-      fragment:issue.text || "",
-      action,
-      replacement
-    });
-  } catch (error){
-    PROJECT.error = error.message || String(error);
-  }
-}
-
 function renderResumePrompt(){
   const state = PROJECT.candidate;
   $("resumeSection").hidden = !state;
   if (!state) return;
-  const saved = state.updated_at ? new Date(state.updated_at * 1000) : null;
-  $("resumeMeta").textContent = [
-    trn("count.turns", (state.turns || []).length),
-    saved ? saved.toLocaleString(UI_LOCALE()) : ""
-  ].filter(Boolean).join(" · ");
+  $("resumeMeta").textContent = trn("count.turns", state.transcript.order.length);
 }
 
 async function lookForSavedProject(){
   PROJECT.candidate = null;
   renderResumePrompt();
   try {
-    const found = await appCall("project_load");
-    if (found.ok && found.state && (found.state.turns || []).length){
+    const found = await appCall("interview_load");
+    if (found.ok && found.state){
       PROJECT.candidate = found.state;
       PROJECT.path = found.path || "";
     }
@@ -2684,18 +2659,15 @@ function resumeSavedProject(){
   const state = PROJECT.candidate;
   if (!state) return;
   resetProofreading();
-  PROOF.sourceName = state.source_name || (TRANSCRIBER.media && TRANSCRIBER.media.name) || "";
-  PROOF.duration = Number(state.duration) || 0;
-  PROOF.guide = state.guide || "";
-  PROOF.notes = state.notes || "";
-  PROOF.turns = (state.turns || []).map(turn => ({...turn}));
-  for (const turn of PROOF.turns){
-    if (turn.manually_edited) PROOF.manuallyEdited.add(turn.id);
-    if (turn.topic_start) PROOF.topicOverrides.set(turn.id, true);
-  }
+  PROOF.sourceName = state.recording || (TRANSCRIBER.media && TRANSCRIBER.media.name) || "";
+  PROOF.duration = state.duration;
+  PROOF.guide = state.guide;
+  PROOF.notes = state.notes;
+  PROOF.turns = turnsFromTranscript(state.transcript);
   $("interviewGuide").value = PROOF.guide;
   $("interviewNotes").value = PROOF.notes;
   PROJECT.ready = true;
+  PROJECT.state = state;
   PROJECT.candidate = null;
   renderResumePrompt();
   TRANSCRIBER.result = {
@@ -3904,14 +3876,18 @@ async function runProofreading(){
 }
 
 async function prepareProofreading(){
-  const result = TRANSCRIBER.result;
-  if (!result || !(result.turns || []).length) return;
+  await PROJECT.creating;
+  const state = PROJECT.state;
+  if (!state){
+    $("transcribeError").textContent = PROJECT.error;
+    return;
+  }
   resetProofreading();
-  PROOF.sourceName = result.source_name || tr("result.default_name");
-  PROOF.duration = Number(result.duration) || 0;
+  PROOF.sourceName = state.recording || tr("result.default_name");
+  PROOF.duration = state.duration;
   PROOF.guide = $("interviewGuide").value.trim();
   PROOF.notes = $("interviewNotes").value.trim();
-  PROOF.turns = JSON.parse(JSON.stringify(result.turns || []));
+  PROOF.turns = turnsFromTranscript(state.transcript);
   switchMode("proofreading");
   renderProof();
   await runProofreading();
@@ -4000,7 +3976,6 @@ function keepProofIssue(issue){
   const next = remaining[Math.min(Math.max(0, index), remaining.length - 1)] || null;
   PROOF.activeIssueId = next ? next.id : "";
   renderProof();
-  void recordProjectDecision(issue, "keep");
   scheduleProjectSave();
   if (next) focusProofIssue(next);
 }
@@ -4163,7 +4138,6 @@ function replaceProofIssue(issue, replacement){
   PROOF.activeIssueId = next ? next.id : "";
   PROOF.stats.issues = remaining.length;
   renderProof();
-  void recordProjectDecision(issue, "replace", replacement);
   scheduleProjectSave();
   if (next) focusProofIssue(next);
   return true;
@@ -4424,11 +4398,6 @@ function applyProofBatch(){
 
   PROOF.batch = null;
   PROOF.emailError = "";
-  void recordProjectDecision(
-    {turn_id:"", kind:"batch", text:batch.fragment},
-    "replace-everywhere",
-    `${batch.replacement} ×${replaced}`
-  );
   // The offsets of all remarks have moved — ask the check to recompute them.
   void runProofreading();
 }
@@ -4485,7 +4454,7 @@ function renderProofTranscript(){
 function bindTopicTitles(){
   document.querySelectorAll("[data-topic-title]").forEach(field => {
     field.onchange = () => {
-      const turn = PROOF.turns.find(turnItem => turnItem.id === field.dataset.topicTitle);
+      const turn = PROOF.turns.find(turnItem => String(turnItem.id) === field.dataset.topicTitle);
       if (!turn) return;
       turn.topic_title = field.value.trim();
       PROOF.manuallyEdited.add(turn.id);
@@ -4508,7 +4477,6 @@ function rememberProofWord(issue){
     .then(reply => { if (reply && reply.ok) STUDY_WORDS.list = reply.words || []; })
     .then(renderStudyWords)
     .catch(() => {});
-  void recordProjectDecision(issue, "remember", word);
   keepProofIssue(issue);
 }
 
@@ -4811,7 +4779,7 @@ async function useRecording(index){
     if (!recording.audio){
       /* The audio file is gone but the work exists — open it without the audio. */
       if (!recording.project) throw new Error(tr("study.nothing_for_interview"));
-      const opened = await appCall("project_open", recording.project);
+      const opened = await appCall("interview_open", recording.project);
       if (!opened.ok) throw new Error(opened.error || tr("error.open_work"));
       STUDY.chosen = recording.name;
     void loadNotesFor(recording.name);
@@ -4835,6 +4803,8 @@ async function useRecording(index){
     TRANSCRIBER.maxProgress = 0;
     TRANSCRIBER.projectStarted = false;
     PROJECT.ready = false;
+    PROJECT.state = null;
+    PROJECT.creating = null;
     resetProofreading();
     attachProofAudio(selected.audio_token || "", selected.parts || []);
     renderStudy();
@@ -5768,7 +5738,7 @@ function anonymisedTurns(){
 
 function markAnonymizationDone(){
   if (!PROJECT.ready) return;
-  void appCall("project_mark_anonymized", pendingEntities(), anonymisedTurns())
+  void appCall("interview_mark_anonymized", pendingEntities(), anonymisedTurns())
     .catch(() => {});
 }
 

@@ -9,7 +9,7 @@ import urllib.error
 import urllib.request
 from http.server import ThreadingHTTPServer
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from alumenans import server
 from alumenans.api import AppApi
@@ -46,7 +46,7 @@ class WindowErrorTests(unittest.TestCase):
 
     def test_a_failed_reply_is_logged_as_a_warning(self):
         with self.assertLogs("alumenans.server", "WARNING") as logged:
-            self.post("/page-error", {"level": "warning", "message": "project_load: no project"})
+            self.post("/page-error", {"level": "warning", "message": "interview_load: no interview"})
         self.assertTrue(logged.output[0].startswith("WARNING"))
 
     def test_an_exception_in_a_request_is_logged_with_its_traceback(self):
@@ -67,13 +67,14 @@ class ApplicationErrorTests(unittest.TestCase):
             api._study_folder = Path(folder)
             api._study_secret = StudySecret(os.urandom(16), os.urandom(32))
             api.selected_media = media
+            api.transcriber = MagicMock()
+            api.transcriber.status.return_value = {"result": {"turns": []}}
             with patch(
-                "alumenans.storage.project_store.ProjectStore.save_transcript",
+                "alumenans.storage.interview_store.InterviewStore.create",
                 side_effect=ValueError("boom"),
             ):
                 with self.assertLogs("alumenans.api", "ERROR") as logged:
-                    reply = api.project_save_transcript({"turns": []})
-            api._close_project()
+                    reply = api.interview_create()
         self.assertEqual(reply, {"ok": False, "error": "boom"})
         self.assertIn("Traceback", logged.output[0])
 

@@ -13,6 +13,7 @@ conversion between versions.
 from __future__ import annotations
 
 import json
+import re
 import time
 import zlib
 from contextlib import closing
@@ -24,9 +25,13 @@ from sqlcipher3 import dbapi2 as sqlite3
 
 from alumenans.document.transcript import Author, Transcript, Turn, Word, changed_turns
 from alumenans.i18n import t
+from alumenans.interview_name import parse_interview_name
 from alumenans.storage import cipher
 from alumenans.storage.cipher import StudySecret
 
+# Two-part on purpose: the study file (".study.alumenans") shares the folder,
+# and no recording name can turn into it.
+INTERVIEW_SUFFIX = ".interview.alumenans"
 SCHEMA_VERSION = 2
 
 SCHEMA = """
@@ -308,6 +313,56 @@ class InterviewStore:
             "INSERT OR REPLACE INTO document VALUES (1, ?, ?, ?)",
             (transcript.revision, transcript.next_word_id, transcript.next_turn_id),
         )
+
+
+_UNSAFE_NAME = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
+
+
+def interview_stem(media_path: str | Path) -> str:
+    """The name of an interview's files, from the name of its recording.
+
+    An interview that was interrupted lies in two recordings, numbered 1
+    and 2. It was one conversation, so both give the same name."""
+
+    media = Path(media_path).expanduser()
+    parsed = parse_interview_name(media)
+    if parsed.recognised:
+        pieces = (parsed.study, parsed.interviewer, parsed.number, parsed.respondent)
+        stem = "-".join(piece for piece in pieces if piece)
+    else:
+        stem = media.stem
+    return _UNSAFE_NAME.sub("_", stem).strip(" .") or "интервью"
+
+
+def interview_path_for(media_path: str | Path, folder: str | Path) -> Path:
+    """The interview file for a recording. It lives in the study folder and
+    not beside the recording, which is deleted once the interview has been
+    processed."""
+
+    return Path(folder).expanduser() / f"{interview_stem(media_path)}{INTERVIEW_SUFFIX}"
+
+
+def summaries(folder: str | Path, secret: StudySecret) -> tuple[list[dict], list[dict]]:
+    """The interviews in a study folder, and the interview files that can't
+    be read, each with its `name` and the `error`.
+
+    An unreadable file is reported and not left out: it may be someone's
+    whole interview."""
+
+    home = Path(folder).expanduser()
+    found = []
+    unreadable = []
+    for item in sorted(home.iterdir()) if home.is_dir() else ():
+        if not item.name.endswith(INTERVIEW_SUFFIX):
+            continue
+        try:
+            summary = summarize(item, secret)
+        except (cipher.CipherError, InterviewFileError) as error:
+            unreadable.append({"name": item.name, "error": str(error)})
+            continue
+        if summary is not None:
+            found.append(summary)
+    return found, unreadable
 
 
 def summarize(path: str | Path, secret: StudySecret) -> dict | None:

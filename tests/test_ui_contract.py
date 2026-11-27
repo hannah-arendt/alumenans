@@ -368,7 +368,7 @@ class WorkflowContractTests(unittest.TestCase):
         # the person, that has to remember this.
         self.assertIn("function markAnonymizationDone()", HTML)
         self.assertIn(
-            'appCall("project_mark_anonymized", pendingEntities(), anonymisedTurns())',
+            'appCall("interview_mark_anonymized", pendingEntities(), anonymisedTurns())',
             HTML,
         )
         self.assertIn("function pendingEntities()", HTML)
@@ -413,7 +413,7 @@ class WorkflowContractTests(unittest.TestCase):
         # Audio is a consumable: it is deleted once the interview is processed, and
         # the interview must stay in the series list and open without it.
         self.assertIn("function describeRecording(recording)", HTML)
-        self.assertIn('appCall("project_open", recording.project)', HTML)
+        self.assertIn('appCall("interview_open", recording.project)', HTML)
         self.assertIn("if (!recording.audio){", HTML)
         self.assertIn('"аудиофайла нет"', UI)
         # Work continues from proofreading rather than starting over.
@@ -431,9 +431,9 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertIn("if (state.raw) await askModel();", HTML)
 
     def test_work_is_written_to_the_project_file(self):
-        self.assertIn('appCall(\n      "project_save_transcript"', HTML)
-        self.assertIn('"project_save_turns"', HTML)
-        self.assertIn('appCall("project_load")', HTML)
+        self.assertIn('appCall(\n      "interview_create"', HTML)
+        self.assertIn('appCall("interview_save_context", PROOF.guide, PROOF.notes)', HTML)
+        self.assertIn('appCall("interview_load")', HTML)
         self.assertIn('id="btnResumeProject"', HTML)
         # Autosave is called after every proofreading decision.
         self.assertIn("scheduleProjectSave();", HTML)
