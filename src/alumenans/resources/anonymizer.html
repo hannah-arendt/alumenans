@@ -282,21 +282,6 @@ button.primary:hover:not(:disabled){background:#000}
    It pops up over the text instead of being embedded in it: it has to
    appear at the very moment a person is already editing the text the
    wrong way, and the page cannot be shifted under them at that moment. */
-.proof-edit-hint{
-  position:sticky; top:12px; z-index:20;
-  margin:14px 0 4px; padding:14px 40px 14px 16px;
-  border:1px solid var(--org-line); background:var(--paper-raised);
-  box-shadow:0 6px 20px rgba(27,30,26,.18);
-  font:16.5px/1.6 var(--serif); color:var(--ink);
-}
-.proof-edit-hint p{margin:0}
-.proof-edit-hint[hidden]{display:none}
-.proof-hint-close{
-  position:absolute; top:8px; right:8px;
-  border:none; background:none; padding:2px 6px; line-height:1;
-  font-size:15px; color:var(--ink-faint); cursor:pointer;
-}
-.proof-hint-close:hover{color:var(--ink)}
 .proof-head-copy{flex:1; min-width:0}
 .proof-head h1{
   margin:0 0 5px; font:400 27px/1.25 var(--serif); letter-spacing:0;
@@ -320,7 +305,10 @@ button.primary:hover:not(:disabled){background:#000}
 /* Listen and pause sit below the timecode on a separate line: on one line
    with it they don't fit and get cramped. */
 .proof-turn-sound{display:flex; gap:4px; margin-top:6px}
-.proof-speaker{font:600 11.5px/1.3 var(--mono); color:var(--ink-soft)}
+.proof-speaker{
+  padding:0; border:none; background:none; cursor:pointer;
+  font:600 11.5px/1.3 var(--mono); color:var(--ink-soft);
+}
 .proof-time{margin-top:4px; font:11px/1.3 var(--mono); color:var(--ink-faint)}
 .proof-topic-toggle{margin-top:9px; padding:4px 7px; font-size:11px}
 .proof-topic-toggle.on{
@@ -346,9 +334,6 @@ button.primary:hover:not(:disabled){background:#000}
   outline:2px solid var(--org); outline-offset:1px; background:#fff;
 }
 .proof-turn.focused .proof-turn-text{box-shadow:inset 3px 0 var(--org)}
-.proof-manual-state{
-  margin-top:6px; color:#4A6B2A; font:10.5px/1.35 var(--mono);
-}
 .proof-flag{padding:1px 0; border-bottom:2px solid}
 .proof-flag[data-kind=term]{background:#35528A1A; border-color:var(--org)}
 .proof-flag[data-kind=guide]{background:#35528A1A; border-color:var(--org)}
@@ -1065,12 +1050,6 @@ kbd{
           </div>
         </div>
 
-        <div class="proof-edit-hint" id="proofEditHint" role="status">
-          <button type="button" class="proof-hint-close" id="btnCloseEditHint"
-                  data-i18n-aria-label="hint.close" data-i18n-title="common.close">&#10005;</button>
-          <p data-i18n="proof.edit_hint"></p>
-        </div>
-
         <div class="proof-turns" id="proofTurns"></div>
       </div>
     </main>
@@ -1435,7 +1414,7 @@ const state = {
   speakers:[], speakerRoles:new Map(), autoFocusPending:true, pseudonym:"",
   /* Turn boundaries inside raw: remembered when the tab was opened. They are
      used to lay the finished replacements back out into the turns. */
-  turns:[], saveTimer:null,
+  turns:[],
   /* Replacements made before returning to proofreading. By now the text itself
      is already anonymised and they are no longer among the findings — but they
      must be in the key, otherwise the "name → pseudonym" mapping is lost. */
@@ -1694,7 +1673,6 @@ function renderEditor(){
       if (!g.skip) g.skip = new Set();
       if (checkbox.checked) g.skip.delete(occurrence); else g.skip.add(occurrence);
       renderAll();
-      scheduleAnonymizationSave();
     };
   });
   $("doReplace").onclick = () => apply("replaced", input.value.trim());
@@ -1861,7 +1839,6 @@ function undoAnon(){
   state.speakerRoles = new Map(snapshot.roles);
   state.active = snapshot.active;
   renderAll();
-  scheduleAnonymizationSave();
   return true;
 }
 
@@ -1950,7 +1927,6 @@ function apply(status, pseudonym){
   anonRemember();
   g.status = status;
   if (status === "replaced"){ g.pseudonym = pseudonym || g.suggest; loadForms(); }
-  scheduleAnonymizationSave();
   nextPending();
 }
 
@@ -1990,7 +1966,6 @@ function load(raw, name, options){
   if (!options || !options.keepKey) state.carried = [];
   state.turns = [];
   ANON_HISTORY.past.length = 0;
-  clearTimeout(state.saveTimer);
   state.speakerRoles.clear();
   state.speakers = [...new Set(
     [...state.raw.matchAll(/^Спикер\s+(\d+):/gm)].map(match => Number(match[1]))
@@ -2202,14 +2177,11 @@ const PROOF = {
   kept:new Set(),
   topicOverrides:new Map(),
   replacementDrafts:new Map(),
-  manuallyEdited:new Set(),
-  editingTurns:new Set(),
+  revision:0,
+  canUndo:false,
+  canRedo:false,
   newWords:new Map(),
   batch:null,
-  manualEdit:null,
-  splitAt:null,
-  hintDone:false,
-  hintTimer:null,
   activeIssueId:"",
   reviewTotal:0,
   reviewedCount:0,
@@ -2535,13 +2507,11 @@ function resetProofreading(){
   PROOF.kept.clear();
   PROOF.topicOverrides.clear();
   PROOF.replacementDrafts.clear();
-  PROOF.manuallyEdited.clear();
-  PROOF.editingTurns.clear();
+  PROOF.revision = 0;
+  PROOF.canUndo = false;
+  PROOF.canRedo = false;
   PROOF.newWords.clear();
   PROOF.batch = null;
-  PROOF.manualEdit = null;
-  PROOF.splitAt = null;
-  PROOF.hintDone = false;
   PROOF.activeIssueId = "";
   PROOF.reviewTotal = 0;
   PROOF.reviewedCount = 0;
@@ -2579,13 +2549,50 @@ const PROJECT = {
   candidate:null
 };
 
-/* The turns of an interview as the application gave them, each with its text. */
-function turnsFromTranscript(transcript){
-  const turns = new Map(transcript.changed.map(turn => [turn.id, turn]));
-  return transcript.order.map(id => {
-    const turn = turns.get(id);
-    return {...turn, text:turn.words.map(word => word.text).join(" ")};
-  });
+/* Takes the transcript, or a change to it, as the application reports it:
+   the turns that are new or different, and the order of all turns. Flags on
+   a changed turn no longer point at the right letters and are dropped,
+   unless the caller has moved them itself. */
+function takeTranscript(change, keepFlags = false){
+  const turns = new Map(PROOF.turns.map(turn => [turn.id, turn]));
+  for (const turn of change.changed){
+    const old = turns.get(turn.id) || {};
+    turns.set(turn.id, {
+      topic_start:old.topic_start,
+      topic_reason:old.topic_reason,
+      topic_title:old.topic_title,
+      ...turn,
+      text:turn.words.map(word => word.text).join(" ")
+    });
+    if (!keepFlags) removeProofIssuesForTurn(turn.id);
+  }
+  PROOF.turns = change.order.map(id => turns.get(id));
+  PROOF.revision = change.revision;
+  PROOF.canUndo = change.can_undo;
+  PROOF.canRedo = change.can_redo;
+  const places = new Map(PROOF.turns.map((turn, index) => [turn.id, index]));
+  PROOF.issues = PROOF.issues.filter(issue => places.has(issue.turn_id));
+  for (const issue of PROOF.issues) issue.turn_index = places.get(issue.turn_id);
+}
+
+/* Every edit is made by the application, which holds the transcript: the
+   window says what the person did and takes back what changed. Edits go one
+   at a time and in order, each on the transcript the one before it left. */
+let EDITS = Promise.resolve();
+
+function sendEdit(call, keepFlags = false){
+  const run = async () => {
+    try {
+      const reply = await call(PROOF.revision);
+      // A stale reply carries the whole transcript the application holds.
+      if (reply.ok || reply.stale) takeTranscript(reply, keepFlags);
+      return reply;
+    } catch (error){
+      return {ok:false, error:error.message || String(error)};
+    }
+  };
+  EDITS = EDITS.then(run);
+  return EDITS;
 }
 
 async function createProject(){
@@ -2663,7 +2670,7 @@ function resumeSavedProject(){
   PROOF.duration = state.duration;
   PROOF.guide = state.guide;
   PROOF.notes = state.notes;
-  PROOF.turns = turnsFromTranscript(state.transcript);
+  takeTranscript(state.transcript);
   $("interviewGuide").value = PROOF.guide;
   $("interviewNotes").value = PROOF.notes;
   PROJECT.ready = true;
@@ -3091,72 +3098,13 @@ function removeProofIssuesForTurn(turnId){
 
 /* ---------- undo and redo ---------- */
 
-/* Proofreading is several hours of work, and the cost of an accidental move in it
-   is high. A snapshot is taken before each change, not after: then undo
-   returns exactly what was visible on the screen. */
-
-const HISTORY = {past:[], future:[], limit:10};
-
-function proofSnapshot(){
-  return {
-    turns: JSON.parse(JSON.stringify(PROOF.turns)),
-    issues: JSON.parse(JSON.stringify(PROOF.issues)),
-    ignored: [...PROOF.ignored],
-    kept: [...PROOF.kept],
-    edited: [...PROOF.manuallyEdited],
-    topics: [...PROOF.topicOverrides],
-    active: PROOF.activeIssueId,
-    reviewed: PROOF.reviewedCount
-  };
-}
-
-function remember(){
-  if (!PROOF.turns.length) return;
-  HISTORY.past.push(proofSnapshot());
-  if (HISTORY.past.length > HISTORY.limit) HISTORY.past.shift();
-  HISTORY.future.length = 0;
-}
-
-function restoreProof(state){
-  PROOF.turns = state.turns;
-  PROOF.issues = state.issues;
-  PROOF.ignored = new Set(state.ignored);
-  PROOF.kept = new Set(state.kept);
-  PROOF.manuallyEdited = new Set(state.edited);
-  PROOF.topicOverrides = new Map(state.topics);
-  PROOF.activeIssueId = state.active;
-  PROOF.reviewedCount = state.reviewed;
-  PROOF.manualEdit = null;
-  PROOF.splitAt = null;
-  keepingScroll(renderProof);
-  scheduleProjectSave();
-}
-
+/* Undo and redo are the application's: it keeps the earlier transcripts. */
 function undoProof(){
-  if (!HISTORY.past.length) return false;
-  HISTORY.future.push(proofSnapshot());
-  restoreProof(HISTORY.past.pop());
-  return true;
+  return sendEdit(() => appCall("interview_undo")).then(() => keepingScroll(renderProof));
 }
 
 function redoProof(){
-  if (!HISTORY.future.length) return false;
-  HISTORY.past.push(proofSnapshot());
-  restoreProof(HISTORY.future.pop());
-  return true;
-}
-
-/* ---------- editing the speaker markup ---------- */
-
-/* Voice markup is done by a machine from the audio and makes predictable mistakes:
-   most often it glues the end of a question to the start of an answer. Without a way
-   to fix this by hand, everything that depends on attribution — roles, guide coverage —
-   stays hostage to the machine's decision.
-   The recording's words don't go anywhere in the process: the turn is split along with them. */
-
-function newTurnId(){
-  return "t-правка-" + Date.now().toString(16)
-    + "-" + Math.floor(Math.random() * 65536).toString(16);
+  return sendEdit(() => appCall("interview_redo")).then(() => keepingScroll(renderProof));
 }
 
 function knownSpeakers(){
@@ -3167,247 +3115,121 @@ function knownSpeakers(){
   return Array.from({length: highest + 1}, (_, index) => index + 1);
 }
 
-/* Splits a turn at the cursor position. The recording's words are split along with the text,
-   so both halves stay tied to their own audio. */
-function splitTurn(index, offset){
-  const turn = PROOF.turns[index];
-  if (!turn) return false;
-  const head = turn.text.slice(0, offset).trim();
-  const tail = turn.text.slice(offset).trim();
-  if (!head || !tail) return false;
+/* ---------- editing a turn ---------- */
 
-  const flat = expandTurnWords(turn);
-  const cut = wordIndexAtOffset(turn.text, offset);
-  const before = flat.slice(0, cut);
-  const after = flat.slice(cut);
+/* A turn is a text box. The person types in it freely; what they typed is
+   sent to the application after a pause and when they leave the turn. */
 
-  const edge = before.length && after.length
-    ? (before[before.length - 1].end + after[0].start) / 2
-    : turn.start + (turn.end - turn.start) * (offset / Math.max(1, turn.text.length));
+const TYPING = {timer:null, skip:null};
 
-  const second = {
-    id: newTurnId(),
-    start: after.length ? after[0].start : edge,
-    end: turn.end,
-    speaker: turn.speaker,
-    text: tail,
-    topic_start: false,
-    topic_reason: null,
-    topic_title: "",
-    words: after
-  };
-  turn.text = head;
-  turn.end = before.length ? before[before.length - 1].end : edge;
-  turn.words = before;
-
-  PROOF.turns.splice(index + 1, 0, second);
-  PROOF.manuallyEdited.add(turn.id);
-  PROOF.manuallyEdited.add(second.id);
-  return true;
+function turnOfEditor(editor){
+  const id = editor.closest(".proof-turn").dataset.proofTurn;
+  return PROOF.turns.find(turn => String(turn.id) === id) || null;
 }
 
-/* Two consecutive turns by the same person are one turn. A separate button
-   for merging isn't needed: it happens by itself as soon as the reason to keep
-   them apart is gone. */
-function normalizeTurns(){
-  let merged = false;
-  for (let index = PROOF.turns.length - 1; index > 0; index--){
-    const turn = PROOF.turns[index];
-    const previous = PROOF.turns[index - 1];
-    if (Number(turn.speaker) !== Number(previous.speaker)) continue;
-    // A topic timecode is a meaningful boundary; the person set it themselves.
-    if (turn.topic_start) continue;
-    previous.words = [...expandTurnWords(previous), ...expandTurnWords(turn)];
-    previous.text = `${previous.text} ${turn.text}`.replace(/\s{2,}/g, " ").trim();
-    previous.end = Math.max(previous.end, turn.end);
-    if (PROOF.manuallyEdited.has(turn.id)) PROOF.manuallyEdited.add(previous.id);
-    PROOF.turns.splice(index, 1);
-    merged = true;
-  }
-  return merged;
-}
-
-/* How many voices are in the recording. The number is set at transcription and
-   doesn't change afterwards, so with two participants there is nothing to choose from. */
-function speakerCount(){
-  const asked = Number(
-    (TRANSCRIBER.status && TRANSCRIBER.status.requested_speakers) || 0
+function editorOfTurn(turnId){
+  return document.querySelector(
+    `.proof-turn[data-proof-turn="${CSS.escape(String(turnId))}"] .proof-turn-text`
   );
-  const seen = new Set(PROOF.turns.map(turn => Number(turn.speaker) || 1));
-  return Math.max(2, asked || 0, ...seen);
 }
 
-function otherSpeaker(current){
-  const total = speakerCount();
-  if (total !== 2) return 0;
-  return Number(current) === 1 ? 2 : 1;
+function editorText(editor){
+  return fixQuotes(fixDashes((editor.textContent || "").replace(/\s+/g, " ").trim()));
 }
 
-/* The selected piece belongs to a different person. The turn breaks into
-   three parts — before, the selection, after — and the superfluous ones vanish at once.
-   The recording's words are split along with the text. */
-function moveSelectionToSpeaker(spot, speaker){
-  const turn = PROOF.turns[spot.turnIndex];
-  if (!turn) return false;
-  let {start, end} = spot;
-  if (turn.text.slice(start, end) !== spot.text){
-    start = turn.text.indexOf(spot.text);
-    if (start < 0) return false;
-    end = start + spot.text.length;
-  }
-
-  const flat = expandTurnWords(turn);
-  const first = wordIndexAtOffset(turn.text, start);
-  const last = first + countWords(turn.text.slice(start, end));
-  const pieces = [
-    {text: turn.text.slice(0, start).trim(), words: flat.slice(0, first),
-     speaker: turn.speaker},
-    {text: turn.text.slice(start, end).trim(), words: flat.slice(first, last),
-     speaker: speaker},
-    {text: turn.text.slice(end).trim(), words: flat.slice(last),
-     speaker: turn.speaker}
-  ].filter(part => part.text);
-
-  /* The whole turn is selected — nothing to split, only the voice changes.
-
-     This used to say "fewer than two parts — refuse", and the click
-     did nothing: no change, no message. Yet this is the most common
-     case — a person sees that the whole turn is attributed to the wrong
-     speaker and selects all of it. */
-  if (pieces.length === 1 && turn.text.slice(start, end).trim() === turn.text.trim()){
-    turn.speaker = speaker;
-    PROOF.manuallyEdited.add(turn.id);
-    return true;
-  }
-  if (pieces.length < 2) return false;
-
-  const created = pieces.map((part, order) => ({
-    id: order === 0 ? turn.id : newTurnId(),
-    start: part.words.length ? part.words[0].start : turn.start,
-    end: part.words.length ? part.words[part.words.length - 1].end : turn.end,
-    speaker: part.speaker,
-    text: part.text,
-    topic_start: order === 0 ? !!turn.topic_start : false,
-    topic_reason: order === 0 ? turn.topic_reason : null,
-    topic_title: order === 0 ? (turn.topic_title || "") : "",
-    words: part.words
-  }));
-  PROOF.turns.splice(spot.turnIndex, 1, ...created);
-  created.forEach(part => PROOF.manuallyEdited.add(part.id));
-  return true;
-}
-
-/* The order and number of turns have changed — the old remarks point to the wrong places,
-   and the check has to be recomputed. */
-function afterStructureChange(){
-  PROOF.manualEdit = null;
-  PROOF.splitAt = null;
-  PROOF.hintDone = false;
-  PROOF.activeIssueId = "";
-  keepingScroll(renderProof);
-  scheduleProjectSave();
-  void runProofreading();
-}
-
-/* ---------- editing via selection ---------- */
-
-/* Free editing inside a turn breaks the link between letters and audio: the text's
-   words are matched to the recording's words in order, and adding or removing
-   just one makes everything after it shift. So an edit that changes the number of
-   words goes the same way as the program's own replacements: the person selects a
-   piece, types the correct version, and the new piece gets the time from the start
-   of the first to the end of the last selected word. */
-
-function selectionInsideTurn(){
+/* How many characters of the turn lie before the caret; null while
+   something is selected. */
+function caretOffset(editor){
   const selection = window.getSelection();
-  if (!selection || selection.isCollapsed || !selection.rangeCount) return null;
+  if (!selection || !selection.rangeCount || !selection.isCollapsed) return null;
   const range = selection.getRangeAt(0);
-  const editor = range.startContainer.parentElement
-    ? range.startContainer.parentElement.closest(".proof-turn-text")
-    : null;
-  if (!editor || !editor.contains(range.endContainer)) return null;
-  const index = Number(editor.dataset.proofIndex);
-  const turn = PROOF.turns[index];
-  if (!turn) return null;
-
-  // The offset is counted from the start of the turn, not of the node: inside
-  // the editable area there is a separate node for each word.
+  if (!editor.contains(range.startContainer)) return null;
   const before = document.createRange();
   before.selectNodeContents(editor);
   before.setEnd(range.startContainer, range.startOffset);
-  const start = before.toString().length;
-  const text = selection.toString();
-  if (!text) return null;
-  // A selected space between words is the place of a missing word.
-  // Recognition sometimes loses a word entirely, and the person must type it
-  // in the same way as any other edit.
-  return {
-    turnIndex:index, turn, start, end:start + text.length, text,
-    gap: !text.trim()
-  };
+  return before.toString().length;
 }
 
-function openManualEdit(spot){
-  dismissEditHint();
-  PROOF.manualEdit = {
-    turnIndex:spot.turnIndex,
-    turnId:spot.turn.id,
-    start:spot.start,
-    end:spot.end,
-    text:spot.text,
-    gap:!!spot.gap,
-    draft:spot.gap ? "" : spot.text
-  };
-  PROOF.activeIssueId = "";
-  renderProofIssues();
-  renderProofSummary();
-  const field = $("manualEditInput");
-  if (field){
-    field.focus();
-    field.select();
-  }
-}
-
-function applyManualEdit(replacement){
-  const edit = PROOF.manualEdit;
-  if (!edit) return;
-  if (edit.gap && !String(replacement).trim()){
-    // Nothing to type in — the space stays a space, nothing to undo.
-    PROOF.manualEdit = null;
-    keepingScroll(renderProof);
-    return;
-  }
-  remember();
-  const turn = PROOF.turns[edit.turnIndex];
-  if (!turn || turn.id !== edit.turnId){
-    PROOF.manualEdit = null;
-    renderProof();
-    return;
-  }
-  let {start, end} = edit;
-  if (turn.text.slice(start, end) !== edit.text){
-    start = turn.text.indexOf(edit.text);
-    if (start < 0){
-      PROOF.manualEdit = null;
-      renderProof();
-      return;
+function focusTurn(turnId, offset){
+  const editor = editorOfTurn(turnId);
+  if (!editor) return;
+  editor.focus();
+  const walker = document.createTreeWalker(editor, NodeFilter.SHOW_TEXT);
+  const caret = document.createRange();
+  caret.selectNodeContents(editor);
+  caret.collapse(false);
+  let left = offset;
+  for (let node = walker.nextNode(); node; node = walker.nextNode()){
+    if (left <= node.data.length){
+      caret.setStart(node, left);
+      caret.collapse(true);
+      break;
     }
-    end = start + edit.text.length;
+    left -= node.data.length;
   }
-  if (edit.gap){
-    // The missing word goes between its neighbours, not in place of the space.
-    replacement = `${edit.text}${String(replacement).trim()}${edit.text}`;
-  }
-  reflowTurnWords(turn, start, end, replacement);
-  turn.text = replacement
-    ? turn.text.slice(0, start) + replacement + turn.text.slice(end)
-    : healSeam(turn.text.slice(0, start) + turn.text.slice(end), start);
-  PROOF.manuallyEdited.add(turn.id);
-  removeProofIssuesForTurn(turn.id);
-  PROOF.manualEdit = null;
+  const selection = window.getSelection();
+  selection.removeAllRanges();
+  selection.addRange(caret);
+}
+
+/* Sends the turn's text if it differs from what the application holds. An
+   emptied turn is sent only on leaving: sending it removes the turn. */
+function saveTurn(editor, leaving){
+  const turn = turnOfEditor(editor);
+  const text = editorText(editor);
+  if (!turn || text === turn.text || (!text && !leaving)) return EDITS;
+  const continues = editor.dataset.saved === "1";
+  editor.dataset.saved = "1";
   PROOF.emailError = "";
-  keepingScroll(renderProof);
-  scheduleProjectSave();
+  return sendEdit(revision =>
+    appCall("interview_retext", revision, turn.id, text, continues));
+}
+
+/* Leaves the turn without the usual save: the action that follows carries
+   the text itself. */
+function leaveUnsaved(editor){
+  TYPING.skip = editor;
+  editor.blur();
+  TYPING.skip = null;
+}
+
+function splitTurnAtCaret(editor){
+  const offset = caretOffset(editor);
+  const turn = turnOfEditor(editor);
+  if (offset === null || !turn) return;
+  const raw = editor.textContent || "";
+  const before = fixQuotes(fixDashes(raw.slice(0, offset)));
+  const after = fixQuotes(fixDashes(raw.slice(offset)));
+  if (!before.trim() || !after.trim()) return;
+  leaveUnsaved(editor);
+  void sendEdit(revision => appCall("interview_split", revision, turn.id, before, after))
+    .then(reply => {
+      keepingScroll(renderProof);
+      if (reply.ok) focusTurn(reply.order[reply.order.indexOf(turn.id) + 1], 0);
+    });
+}
+
+/* Joins the turn at `index` to the one before it and puts the caret where
+   they met. */
+function joinTurns(index){
+  const first = PROOF.turns[index - 1];
+  const second = PROOF.turns[index];
+  if (!first || !second) return;
+  if (first.speaker !== second.speaker){
+    $("proofStatus").textContent = tr("proof.join_other_speaker");
+    return;
+  }
+  // Leaving the turn saves what was typed in it; the join comes after.
+  if (document.activeElement) document.activeElement.blur();
+  void EDITS.then(() => {
+    const saved = PROOF.turns.find(turn => turn.id === first.id);
+    const meeting = saved ? saved.text.length + 1 : 0;
+    return sendEdit(revision => appCall("interview_merge", revision, second.id))
+      .then(() => {
+        keepingScroll(renderProof);
+        focusTurn(first.id, meeting);
+      });
+  });
 }
 
 /* Two hyphens in a row are a typed dash. */
@@ -3422,43 +3244,6 @@ function fixQuotes(text){
   return String(text)
     .replace(/(^|[\s([{«—-])["'](?=\S)/g, "$1«")
     .replace(/(\S)["'](?=$|[\s.,;:!?)\]}»—-])/g, "$1»");
-}
-
-function syncProofTurnElement(element){
-  const index = Number(element.dataset.proofIndex);
-  const turn = PROOF.turns[index];
-  if (!turn) return false;
-  const text = fixQuotes(fixDashes((element.textContent || "").replace(/\s*\n\s*/g, " ").trim()));
-  if (text === turn.text) return false;
-
-  // The text's words are matched to the recording's words in order. As long as there are
-  // as many of them, editing punctuation and letters doesn't break the link. But removing or
-  // adding a word directly in the text is not allowed: everything after it shifts, and the turn
-  // stops playing. Such an edit is done via selection — then the new
-  // piece gets the old one's time.
-  if (countWords(text) !== countWords(turn.text)){
-    element.textContent = turn.text;
-    // Edit rejected: the text's words and the recording's words would drift apart.
-    PROOF.hintDone = false;
-    renderEditHint();
-    startEditHintTimer();
-    return false;
-  }
-  remember();
-  turn.text = text;
-  PROOF.manuallyEdited.add(turn.id);
-  PROOF.editingTurns.delete(turn.id);
-  removeProofIssuesForTurn(turn.id);
-  PROOF.emailError = "";
-  return true;
-}
-
-function syncProofTurns(){
-  let changed = false;
-  document.querySelectorAll(".proof-turn-text[data-proof-index]").forEach(element => {
-    changed = syncProofTurnElement(element) || changed;
-  });
-  return changed;
 }
 
 function syncProofNotes(){
@@ -3481,49 +3266,6 @@ function syncProofGuide(){
   PROOF.guideDirty = true;
   PROOF.emailError = "";
   return true;
-}
-
-function renderEditHint(){
-  const hint = $("proofEditHint");
-  if (hint) hint.hidden = PROOF.hintDone || !PROOF.turns.length;
-}
-
-/* On switching to proofreading the hint shows itself and goes away after a
-   minute: whoever has read it no longer needs it. But whoever hasn't read it
-   learns the rule only one way — by starting to edit the wrong way. So
-   it comes back at exactly that moment.
-
-   hintDone means "hidden right now", not "shown for good". */
-function dismissEditHint(){
-  if (PROOF.hintDone) return;
-  PROOF.hintDone = true;
-  clearTimeout(PROOF.hintTimer);
-  renderEditHint();
-}
-
-function startEditHintTimer(){
-  clearTimeout(PROOF.hintTimer);
-  if (PROOF.hintDone) return;
-  PROOF.hintTimer = setTimeout(dismissEditHint, 60000);
-}
-
-/* Show it and don't remove it on a timer: the person is already doing the wrong thing,
-   and a minute may not be enough for them. It goes away via the cross. */
-function showEditHint(){
-  clearTimeout(PROOF.hintTimer);
-  if (!PROOF.hintDone) return;                 // already on screen
-  PROOF.hintDone = false;
-  renderEditHint();
-}
-
-/* An edit is "large-scale" if the number of words changed. Replacing a letter, comma
-   or ending doesn't change the word count; inserting or deleting a word, or a line
-   break, does. That is exactly the boundary the hint talks about. */
-function watchBigEdit(editor){
-  if (!editor) return;
-  const wordsBefore = Number(editor.dataset.wordsAtFocus);
-  if (!Number.isFinite(wordsBefore)) return;
-  if (countWords(editor.textContent) !== wordsBefore) showEditHint();
 }
 
 function renderProofStatus(){
@@ -3550,18 +3292,22 @@ function renderProofStatus(){
   }
 }
 
-function renderProofTurns(){
-  $("proofTurns").innerHTML = PROOF.turns.map((turn, index) => {
-    const topic = !!turn.topic_start;
-    return `
+function proofTurnArticle(turn, index){
+  const topic = !!turn.topic_start;
+  return `
       <article class="proof-turn" data-proof-turn="${escAttr(turn.id)}">
         <div class="proof-turn-meta">
-          <div class="proof-speaker">${tr("speaker.n", {n: Number(turn.speaker) || 1})}</div>
+          <select class="proof-speaker" data-speaker-turn
+                  aria-label="${escAttr(tr("proof.whose_turn"))}">
+            ${knownSpeakers().map(number => `<option value="${number}"
+              ${number === turn.speaker ? "selected" : ""}
+              >${tr("speaker.n", {n: number})}</option>`).join("")}
+          </select>
           <div class="proof-time">${formatClock(turn.start)}</div>
           ${index ? `<button class="proof-topic-toggle ${topic ? "on" : ""}"
-                  data-topic-index="${index}">${topic ? tr("proof.remove_timecode") : tr("proof.timecode")}</button>` : ""}
+                  data-topic-toggle>${topic ? tr("proof.remove_timecode") : tr("proof.timecode")}</button>` : ""}
           ${PLAYER.available ? `<div class="proof-turn-sound">
-            <button class="proof-listen-turn" data-listen-turn="${index}"
+            <button class="proof-listen-turn" data-listen-turn
                   title="${tr("proof.listen_turn")}" aria-label="${tr("proof.listen_turn")}"
                   ><svg viewBox="0 0 12 12" aria-hidden="true"
                     ><path d="M2.5 1.5L10 6l-7.5 4.5z"/></svg></button>
@@ -3580,15 +3326,39 @@ function renderProofTurns(){
                    spellcheck="false" autocomplete="off">
           </div>` : ""}
           <div class="proof-turn-text" contenteditable="true" role="textbox"
-               spellcheck="true" data-proof-index="${index}">${proofTurnHtml(turn, index)}</div>
-          ${PROOF.manuallyEdited.has(turn.id)
-            ? `<div class="proof-manual-state">${tr("proof.edited_manually")}</div>`
-            : ""}
+               spellcheck="true">${proofTurnHtml(turn, index)}</div>
         </div>
       </article>`;
-  }).join("");
+}
+
+/* Draws all the turns except the one the person is typing in: that one is
+   left as it is, caret and all, and is drawn when they leave it. */
+function renderProofTurns(){
+  const container = $("proofTurns");
+  const editor = document.activeElement && document.activeElement.closest
+    ? document.activeElement.closest("#proofTurns .proof-turn-text") : null;
+  const kept = editor ? editor.closest(".proof-turn") : null;
+  const keptAt = kept
+    ? PROOF.turns.findIndex(turn => String(turn.id) === kept.dataset.proofTurn) : -1;
+  const html = (from, to) =>
+    PROOF.turns.slice(from, to).map((turn, index) => proofTurnArticle(turn, from + index)).join("");
+  if (keptAt < 0){
+    container.innerHTML = html(0);
+  } else {
+    while (kept.previousSibling) kept.previousSibling.remove();
+    while (kept.nextSibling) kept.nextSibling.remove();
+    kept.insertAdjacentHTML("beforebegin", html(0, keptAt));
+    kept.insertAdjacentHTML("afterend", html(keptAt + 1));
+  }
   indexPlayableWords();
   highlightCurrentWord();
+}
+
+/* Which turn a control or a piece of text inside it belongs to. */
+function turnIndexOf(node){
+  const article = node.closest(".proof-turn");
+  return article
+    ? PROOF.turns.findIndex(turn => String(turn.id) === article.dataset.proofTurn) : -1;
 }
 
 function visibleProofIssues(){
@@ -3613,88 +3383,7 @@ function activeProofIssue(){
   return issue;
 }
 
-function renderManualEdit(){
-  const edit = PROOF.manualEdit;
-  $("proofIssues").innerHTML = `
-    <article class="proof-issue">
-      <div class="proof-issue-head">
-        <span class="proof-issue-kind">${edit.gap ? tr("proof.gap") : tr("proof.edit")}</span>
-        <time class="proof-issue-time">${formatClock(
-          PROOF.turns[edit.turnIndex] ? PROOF.turns[edit.turnIndex].start : 0
-        )}</time>
-      </div>
-      <p class="proof-issue-text">${
-        edit.gap ? tr("proof.between_words") : esc(edit.text)}</p>
-      <p class="proof-issue-message">${edit.gap
-        ? tr("proof.gap_note")
-        : tr("proof.edit_note")}
-      </p>
-      <label class="proof-replacement">
-        <span>${edit.gap ? tr("proof.missing_word") : tr("proof.should_be")}</span>
-        <input id="manualEditInput" value="${escAttr(edit.draft)}"
-               placeholder="${edit.gap
-                 ? escAttr(tr("proof.what_was_said"))
-                 : escAttr(tr("proof.leave_empty"))}">
-      </label>
-      <div class="proof-issue-actions">
-        <button data-manual-action="cancel">${tr("common.cancel")}</button>
-        ${edit.gap ? "" : `<button data-manual-action="drop">${tr("common.delete")}</button>`}
-        <button class="primary" data-manual-action="apply">${
-          edit.gap ? tr("proof.insert") : tr("proof.replace")}</button>
-        ${edit.gap ? "" : `<button data-manual-action="speaker"
-          >${tr("proof.other_speaker")}</button>`}
-      </div>
-      ${speakerCount() > 2 ? `<label class="proof-replacement">
-        <span>${tr("proof.whose_turn")}</span>
-        <select id="manualSpeaker">
-          ${Array.from({length: speakerCount()}, (_, k) => k + 1)
-            .filter(number => number !== (Number(
-              (PROOF.turns[edit.turnIndex] || {}).speaker) || 1))
-            .map(number => `<option value="${number}">${tr("speaker.n", {n: number})}</option>`)
-            .join("")}
-        </select>
-      </label>` : ""}
-    </article>`;
-}
-
-function renderSplit(){
-  const spot = PROOF.splitAt;
-  const turn = PROOF.turns[spot.turnIndex];
-  const head = turn.text.slice(0, spot.offset).trim();
-  const tail = turn.text.slice(spot.offset).trim();
-  $("proofIssues").innerHTML = `
-    <article class="proof-issue">
-      <div class="proof-issue-head">
-        <span class="proof-issue-kind">${tr("proof.split")}</span>
-        <time class="proof-issue-time">${formatClock(turn.start)}</time>
-      </div>
-      <p class="proof-issue-message">${tr("proof.split_note")}</p>
-      <p class="proof-issue-text">…${esc(head.slice(-70))}</p>
-      <p class="proof-issue-text">${esc(tail.slice(0, 70))}…</p>
-      <label class="proof-replacement">
-        <span>${tr("proof.second_half")}</span>
-        <select id="splitSpeaker">
-          ${knownSpeakers().map(number => `<option value="${number}"
-            ${number === (Number(turn.speaker) || 1) ? "selected" : ""}
-            >${tr("speaker.n", {n: number})}</option>`).join("")}
-        </select>
-      </label>
-      <div class="proof-issue-actions">
-        <button data-split-action="cancel">${tr("common.cancel")}</button>
-        <button class="primary" data-split-action="apply">${tr("proof.split")}</button>
-      </div>
-    </article>`;
-}
-
 function renderProofIssues(){
-  if (PROOF.splitAt){
-    renderSplit();
-    return;
-  }
-  if (PROOF.manualEdit){
-    renderManualEdit();
-    return;
-  }
   if (PROOF.dirty){
     $("proofIssues").innerHTML = `
       <div class="proof-review-stale">
@@ -3809,11 +3498,9 @@ function renderProof(){
   /* Nothing to undo until something has been done. A proofreading check in progress
      has nothing to do with it: undo asks the program nothing, and waiting for
      it to finish is exactly the situation in which a person presses again. */
-  $("btnUndoProof").disabled = !HISTORY.past.length;
+  $("btnUndoProof").disabled = !PROOF.canUndo;
   $("btnProofToAnonymizer").disabled = PROOF.loading || !PROOF.turns.length;
   renderProofStatus();
-  renderEditHint();
-  startEditHintTimer();
   renderProofTurns();
   bindTopicTitles();
   renderProofIssues();
@@ -3843,16 +3530,23 @@ async function runProofreading(){
     if (!response.ok || payload.error){
       throw new Error(payload.error || tr("error.check_transcript"));
     }
-    PROOF.turns = payload.turns || [];
-    for (const turn of PROOF.turns){
-      if (PROOF.topicOverrides.has(turn.id)){
-        turn.topic_start = PROOF.topicOverrides.get(turn.id);
-        turn.topic_reason = "выбрано пользователем";
-      }
-    }
+    /* The check read the turns as they were when it was asked. A turn the
+       person has edited since then keeps its text, and gets no flags: their
+       places are those of the older text. */
+    const checked = new Map((payload.turns || []).map(turn => [turn.id, turn]));
+    const places = new Map();
+    PROOF.turns.forEach((turn, index) => {
+      const seen = checked.get(turn.id);
+      if (!seen || seen.text !== turn.text) return;
+      places.set(turn.id, index);
+      turn.topic_start = PROOF.topicOverrides.has(turn.id)
+        ? PROOF.topicOverrides.get(turn.id) : seen.topic_start;
+      turn.topic_reason = seen.topic_reason;
+    });
     PROOF.issues = (payload.issues || [])
-      .filter(issue => !PROOF.manuallyEdited.has(issue.turn_id))
+      .filter(issue => places.has(issue.turn_id))
       .filter(issue => !PROOF.kept.has(proofIssueDecisionKey(issue)));
+    for (const issue of PROOF.issues) issue.turn_index = places.get(issue.turn_id);
     PROOF.ignored.clear();
     PROOF.replacementDrafts.clear();
     PROOF.activeIssueId = PROOF.issues.length ? PROOF.issues[0].id : "";
@@ -3887,7 +3581,7 @@ async function prepareProofreading(){
   PROOF.duration = state.duration;
   PROOF.guide = $("interviewGuide").value.trim();
   PROOF.notes = $("interviewNotes").value.trim();
-  PROOF.turns = turnsFromTranscript(state.transcript);
+  takeTranscript(state.transcript);
   switchMode("proofreading");
   renderProof();
   await runProofreading();
@@ -3895,7 +3589,7 @@ async function prepareProofreading(){
 }
 
 function showProofTurn(index, issueId){
-  const row = document.querySelector(`.proof-turn-text[data-proof-index="${index}"]`);
+  const row = PROOF.turns[index] ? editorOfTurn(PROOF.turns[index].id) : null;
   if (!row) return;
   document.querySelectorAll(".proof-turn.focused").forEach(element => element.classList.remove("focused"));
   row.closest(".proof-turn").classList.add("focused");
@@ -3926,9 +3620,7 @@ function focusProofIssue(issue){
   const mark = document.querySelector(
     `[data-proof-issue="${CSS.escape(issue.id)}"]`
   );
-  const row = document.querySelector(
-    `.proof-turn-text[data-proof-index="${issue.turn_index}"]`
-  );
+  const row = editorOfTurn(issue.turn_id);
   document.querySelectorAll(".proof-turn.focused")
     .forEach(element => element.classList.remove("focused"));
   if (row) row.closest(".proof-turn").classList.add("focused");
@@ -3954,11 +3646,6 @@ function listenToProofIssue(issue){
 
 function moveProofIssue(offset){
   if (PROOF.dirty) return;
-  syncProofTurns();
-  if (PROOF.dirty){
-    renderProof();
-    return;
-  }
   const issues = visibleProofIssues();
   const index = issues.findIndex(issue => issue.id === PROOF.activeIssueId);
   const next = issues[index + offset];
@@ -3966,7 +3653,6 @@ function moveProofIssue(offset){
 }
 
 function keepProofIssue(issue){
-  remember();
   const issues = visibleProofIssues();
   const index = issues.findIndex(item => item.id === issue.id);
   PROOF.kept.add(proofIssueDecisionKey(issue));
@@ -3988,87 +3674,6 @@ function keepProofIssue(issue){
    must change exactly as the text changes. Then the turn can still be
    listened to, and «Послушать» ("Listen") lands on the right sentence. */
 
-function expandTurnWords(turn){
-  const pattern = new RegExp(PROOF_WORD_PATTERN, "g");
-  const flat = [];
-  for (const word of turn.words || []){
-    const parts = String(word.text || "").match(pattern) || [];
-    if (!parts.length) continue;
-    const from = Number(word.start) || 0;
-    const to = Number(word.end) > from ? Number(word.end) : from;
-    parts.forEach((part, index) => {
-      flat.push({
-        start:from + (to - from) * index / parts.length,
-        end:from + (to - from) * (index + 1) / parts.length,
-        text:part,
-        confidence:word.confidence ?? null,
-        boundary_risk:!!word.boundary_risk
-      });
-    });
-  }
-  return flat;
-}
-
-function wordIndexAtOffset(text, offset){
-  const pattern = new RegExp(PROOF_WORD_PATTERN, "g");
-  let index = 0, match;
-  while ((match = pattern.exec(text)) !== null){
-    if (match.index >= offset) break;
-    index += 1;
-  }
-  return index;
-}
-
-function countWords(text){
-  return (String(text).match(new RegExp(PROOF_WORD_PATTERN, "g")) || []).length;
-}
-
-/* The text in the turn changed on the range [start, end) — bring the word timings
-   into the same shape. The time of deleted words goes to the neighbours, so the
-   turn keeps playing without gaps. */
-function reflowTurnWords(turn, start, end, replacement){
-  const flat = expandTurnWords(turn);
-  if (!flat.length) return;
-  const from = wordIndexAtOffset(turn.text, start);
-  const removed = countWords(turn.text.slice(start, end));
-  const added = countWords(replacement);
-  if (from > flat.length) return;
-
-  const cut = flat.slice(from, from + removed);
-  let span = cut.length
-    ? {start:cut[0].start, end:cut[cut.length - 1].end}
-    : null;
-  if (!span && added){
-    // Nothing was deleted — a word was typed into a space. We borrow its time from
-    // the silence between the neighbours, and if the neighbours are flush — from a neighbour:
-    // otherwise the inserted word ends up without audio and the highlighting goes off.
-    const before = flat[from - 1];
-    const after = flat[from];
-    if (before && after && after.start > before.end){
-      span = {start:before.end, end:after.start};
-    } else if (after){
-      const share = (after.end - after.start) * added / (added + 1);
-      span = {start:after.start, end:after.start + share};
-      after.start = span.end;
-    } else if (before){
-      const share = (before.end - before.start) * added / (added + 1);
-      span = {start:before.end - share, end:before.end};
-      before.end = span.start;
-    }
-  }
-  const parts = String(replacement).match(new RegExp(PROOF_WORD_PATTERN, "g")) || [];
-  const inserted = span
-    ? parts.map((part, index) => ({
-        start:span.start + (span.end - span.start) * index / Math.max(1, added),
-        end:span.start + (span.end - span.start) * (index + 1) / Math.max(1, added),
-        text:part,
-        confidence:null,
-        boundary_risk:false
-      }))
-    : [];
-  turn.words = [...flat.slice(0, from), ...inserted, ...flat.slice(from + removed)];
-}
-
 function healSeam(text, at){
   let head = text.slice(0, at).replace(/[ \t]+$/, "");
   let tail = text.slice(at).replace(/^[ \t]+/, "");
@@ -4084,35 +3689,35 @@ function healSeam(text, at){
   return (head + join + tail).replace(/\s{2,}/g, " ").trim();
 }
 
-function replaceProofIssue(issue, replacement){
-  remember();
-  syncProofTurns();
-  if (PROOF.dirty){
-    renderProof();
-    return false;
-  }
+/* Puts `replacement` in place of the flagged text. The other flags of the
+   turn stay, moved by as many characters as the text grew or shrank. */
+async function replaceProofIssue(issue, replacement){
+  await EDITS;   // what was being typed is saved first
   const turn = PROOF.turns[issue.turn_index];
-  if (!turn) return false;
+  if (!turn) return;
   let start = issue.start;
   let end = issue.end;
   if (turn.text.slice(start, end) !== issue.text){
     start = turn.text.indexOf(issue.text);
     if (start < 0){
-      PROOF.manuallyEdited.add(turn.id);
       removeProofIssuesForTurn(turn.id);
       renderProof();
-      return false;
+      return;
     }
     end = start + issue.text.length;
   }
-  const issuesBefore = visibleProofIssues();
-  const currentIndex = issuesBefore.findIndex(item => item.id === issue.id);
-  const before = turn.text;
-  reflowTurnWords(turn, start, end, replacement);
-  turn.text = replacement
+  const text = replacement
     ? turn.text.slice(0, start) + replacement + turn.text.slice(end)
     : healSeam(turn.text.slice(0, start) + turn.text.slice(end), start);
-  const delta = turn.text.length - before.length;
+  const reply = await sendEdit(
+    revision => appCall("interview_retext", revision, turn.id, text), true);
+  if (!reply.ok){
+    renderProof();
+    return;
+  }
+  const issuesBefore = visibleProofIssues();
+  const currentIndex = issuesBefore.findIndex(item => item.id === issue.id);
+  const delta = text.length - turn.text.length;
   let removed = 0;
   PROOF.issues = PROOF.issues.filter(item => {
     if (item.id === issue.id){
@@ -4138,9 +3743,7 @@ function replaceProofIssue(issue, replacement){
   PROOF.activeIssueId = next ? next.id : "";
   PROOF.stats.issues = remaining.length;
   renderProof();
-  scheduleProjectSave();
   if (next) focusProofIssue(next);
-  return true;
 }
 
 /* ---------- replace throughout the text ---------- */
@@ -4353,15 +3956,15 @@ function renderProofBatch(){
     </div>`;
 }
 
-function applyProofBatch(){
+async function applyProofBatch(){
   const batch = PROOF.batch;
   if (!batch) return;
-  remember();
   const places = [];
   for (const group of batch.groups){
     if (group.checked) places.push(...group.places.map(place => ({...place, form:group.form})));
   }
   if (!places.length) return;
+  await EDITS;   // what was being typed is saved first
 
   const byTurn = new Map();
   for (const place of places){
@@ -4369,36 +3972,28 @@ function applyProofBatch(){
     byTurn.get(place.turnIndex).push(place);
   }
 
-  const wordsIn = value =>
-    (String(value).match(new RegExp(PROOF_WORD_PATTERN, "g")) || []).length;
-
-  let replaced = 0;
   for (const [turnIndex, list] of byTurn){
     const turn = PROOF.turns[turnIndex];
     if (!turn) continue;
-    let shifted = false;
+    let text = turn.text;
     // From the end to the start: otherwise each replacement shifts the following offsets.
     list.sort((left, right) => right.start - left.start);
     for (const place of list){
-      if (turn.text.slice(place.start, place.end) !== place.form) continue;
+      if (text.slice(place.start, place.end) !== place.form) continue;
       let replacement = batch.replacement;
       if (place.form[0] === place.form[0].toLocaleUpperCase("ru")
           && place.form[0] !== place.form[0].toLocaleLowerCase("ru")){
         replacement = replacement[0].toLocaleUpperCase("ru") + replacement.slice(1);
       }
-      // We go from the end, so the offsets haven't shifted yet — the word timings
-      // can be edited the same way as for a single replacement.
-      reflowTurnWords(turn, place.start, place.end, replacement);
-      turn.text = turn.text.slice(0, place.start) + replacement
-        + turn.text.slice(place.end);
-      replaced += 1;
+      text = text.slice(0, place.start) + replacement + text.slice(place.end);
     }
-    if (shifted) PROOF.manuallyEdited.add(turn.id);
+    void sendEdit(revision => appCall("interview_retext", revision, turn.id, text));
   }
+  await EDITS;
 
   PROOF.batch = null;
   PROOF.emailError = "";
-  // The offsets of all remarks have moved — ask the check to recompute them.
+  // The flags of the changed turns are gone — ask the check for new ones.
   void runProofreading();
 }
 
@@ -4457,8 +4052,6 @@ function bindTopicTitles(){
       const turn = PROOF.turns.find(turnItem => String(turnItem.id) === field.dataset.topicTitle);
       if (!turn) return;
       turn.topic_title = field.value.trim();
-      PROOF.manuallyEdited.add(turn.id);
-      scheduleProjectSave();
     };
   });
 }
@@ -4907,12 +4500,12 @@ async function removeSubjectTerm(term){
   if (state.raw) await askModel();
 }
 
-function openAnonymizer(){
+async function openAnonymizer(){
   if (!PROOF.turns.length){
     switchMode("anonymizer");
     return;
   }
-  syncProofTurns();
+  await EDITS;   // what was being typed is saved first
   syncProofNotes();
   syncProofGuide();
   const mapped = proofTranscriptWithMap();
@@ -4925,82 +4518,10 @@ function openAnonymizer(){
   state.turns = mapped.ranges;
 }
 
-/* The person left anonymisation and went back to proofreading.
-
-   Previously the replacements already made were lost in the process: the
-   anonymisation tab was rebuilt from the proofreading text every time. The order
-   "proofread first, then anonymise" is right, but people notice a proofreading
-   mistake after half the names have already been replaced, and losing that half
-   is not acceptable.
-
-   The replacements are carried into the proofreading text itself — as if the person
-   had typed them there by hand. The turns are marked as manually corrected so that
-   the proofreading check doesn't offer to restore the original word. The key goes into
-   state.carried: those names are no longer in the text, but the mapping must
-   be kept. */
-function carryAnonymizationIntoProof(){
-  if (!state.raw || !PROOF.turns.length || !state.turns.length) return;
-  const replacedGroups = [...state.groups.values()].filter(g => g.status === "replaced");
-  if (!replacedGroups.length) return;
-
-  const turnsById = new Map(PROOF.turns.map(turn => [turn.id, turn]));
-  for (const {id, start, end} of state.turns){
-    const turnItem = turnsById.get(id);
-    if (!turnItem) continue;
-    let assembled = "", position = start;
-    for (const e of state.ents){
-      if (e.start < start || e.end > end) continue;
-      const g = state.groups.get(e.group);
-      if (!g || g.status !== "replaced") continue;
-      assembled += state.raw.slice(position, e.start) + inflect(g.pseudonym, e);
-      position = e.end;
-    }
-    if (position === start) continue;                    // no replacements in this turn
-    assembled += state.raw.slice(position, end);
-    if (assembled === turnItem.text) continue;
-    turnItem.text = assembled;
-    PROOF.manuallyEdited.add(id);
-  }
-
-  for (const g of replacedGroups){
-    const forms = replacedForms(g);
-    if (!forms.length) continue;
-    const previous = state.carried.find(item => item.pseudonym === g.pseudonym);
-    if (previous) previous.forms = [...new Set([...previous.forms, ...forms])];
-    else state.carried.push({pseudonym:g.pseudonym, forms:forms});
-  }
-
-  PROOF.dirty = true;
-  renderProof();
-}
-
-/* Anonymisation saves itself as you work.
-
-   Previously it lived only in the window's memory: the program closed, the laptop
-   went to sleep, the window crashed — an hour of work was lost silently. This has
-   already happened to someone, and there was nothing to recover.
-
-   What goes into the project file is the anonymised text, and only that.
-   The "name → pseudonym" mapping is not there and must not be: project
-   files get passed around, and the key lives under a password. So after a
-   crash the replacements remain made, but it won't be possible to undo them — the key
-   is saved separately, with a button.
-
-   Pseudonym numbers will continue on the next opening rather than start
-   over: they are read from the text itself. */
-function scheduleAnonymizationSave(){
-  clearTimeout(state.saveTimer);
-  state.saveTimer = setTimeout(() => {
-    carryAnonymizationIntoProof();
-    void saveProjectNow();
-  }, 900);
-}
-
 /* ---------- events ---------- */
 
 $("tabTranscriber").onclick = () => switchMode("transcriber");
 $("tabProofreading").onclick = () => {
-  carryAnonymizationIntoProof();
   if (PROOF.turns.length) switchMode("proofreading");
   else prepareProofreading();
 };
@@ -5021,10 +4542,10 @@ $("btnCancelTranscription").onclick = async () => {
   }
 };
 $("btnNewTranscription").onclick = resetTranscription;
-$("btnToProofreading").onclick = prepareProofreading;
+$("btnToProofreading").onclick = $("tabProofreading").onclick;
 
 $("btnRecheckProof").onclick = async () => {
-  syncProofTurns();
+  await EDITS;   // what was being typed is saved first
   syncProofNotes();
   syncProofGuide();
   await runProofreading();
@@ -5059,37 +4580,65 @@ for (const field of ["interviewGuide"]){
 }
 $("btnProofToAnonymizer").onclick = openAnonymizer;
 $("btnUndoProof").onclick = () => { undoProof(); };
-$("btnCloseEditHint").onclick = dismissEditHint;
 
 $("proofTurns").addEventListener("focusin", event => {
   const editor = event.target.closest(".proof-turn-text");
   if (!editor) return;
-  const turn = PROOF.turns[Number(editor.dataset.proofIndex)];
-  if (turn) PROOF.editingTurns.add(turn.id);
+  // A new visit to the turn: for undo, everything typed in it is one step.
+  delete editor.dataset.saved;
   editor.querySelectorAll("mark").forEach(mark => mark.replaceWith(document.createTextNode(mark.textContent)));
   editor.normalize();
-  // How many words there were at the start of the edit: this number shows whether
-  // it's a small edit or the person is rewriting the turn.
-  editor.dataset.wordsAtFocus = String(countWords(editor.textContent));
 });
 $("proofTurns").addEventListener("input", event => {
   const editor = event.target.closest(".proof-turn-text");
   if (!editor) return;
-  PROOF.emailError = "";
-  watchBigEdit(editor);
+  clearTimeout(TYPING.timer);
+  TYPING.timer = setTimeout(() => void saveTurn(editor, false), 1000);
 });
-/* Pasting a whole piece is always a large-scale edit, even if the word count
-   happens to match. Show it at once, without waiting for the count. */
+/* Only the words are pasted, never the formatting they came with. */
 $("proofTurns").addEventListener("paste", event => {
-  if (event.target.closest(".proof-turn-text")) showEditHint();
+  if (!event.target.closest(".proof-turn-text")) return;
+  event.preventDefault();
+  const text = event.clipboardData.getData("text/plain").replace(/\s+/g, " ");
+  document.execCommand("insertText", false, text);
 });
 $("proofTurns").addEventListener("focusout", event => {
   const editor = event.target.closest(".proof-turn-text");
   if (!editor) return;
-  delete editor.dataset.wordsAtFocus;
-  syncProofTurnElement(editor);
-  renderProof();
-  scheduleProjectSave();
+  clearTimeout(TYPING.timer);
+  if (editor === TYPING.skip) return;
+  void saveTurn(editor, true).then(() => keepingScroll(renderProof));
+});
+/* Enter starts a new turn at the caret. Backspace at the very start of a
+   turn joins it to the one before; forward delete at the very end joins
+   the next one to it. */
+$("proofTurns").addEventListener("keydown", event => {
+  const editor = event.target.closest(".proof-turn-text");
+  if (!editor || event.isComposing) return;
+  if (event.key === "Enter"){
+    event.preventDefault();
+    splitTurnAtCaret(editor);
+    return;
+  }
+  if (event.key !== "Backspace" && event.key !== "Delete") return;
+  const offset = caretOffset(editor);
+  const index = turnIndexOf(editor);
+  if (event.key === "Backspace" && offset === 0 && index > 0){
+    event.preventDefault();
+    joinTurns(index);
+  } else if (event.key === "Delete" && offset === (editor.textContent || "").length
+             && index >= 0 && index + 1 < PROOF.turns.length){
+    event.preventDefault();
+    joinTurns(index + 1);
+  }
+});
+$("proofTurns").addEventListener("change", event => {
+  const choice = event.target.closest("[data-speaker-turn]");
+  const turn = choice ? PROOF.turns[turnIndexOf(choice)] : null;
+  if (!turn) return;
+  void sendEdit(revision =>
+    appCall("interview_set_speaker", revision, turn.id, Number(choice.value)))
+    .then(() => keepingScroll(renderProof));
 });
 /* ---------- player ---------- */
 
@@ -5164,10 +4713,10 @@ document.addEventListener("keydown", event => {
     && document.activeElement.closest
     && document.activeElement.closest(".proof-turn-text");
   if (inTextField) return;
-  if (isUndo && !HISTORY.past.length) return;
-  if (isRedo && !HISTORY.future.length) return;
+  if (isUndo && !PROOF.canUndo) return;
+  if (isRedo && !PROOF.canRedo) return;
   event.preventDefault();
-  if (isUndo) undoProof(); else redoProof();
+  if (isUndo) void undoProof(); else void redoProof();
 });
 
 document.addEventListener("keydown", event => {
@@ -5207,92 +4756,6 @@ $("proofTurns").addEventListener("beforeinput", event => {
   selection.addRange(caret);
 });
 
-$("proofTurns").addEventListener("contextmenu", event => {
-  const spot = selectionInsideTurn();
-  if (spot){
-    event.preventDefault();
-    openManualEdit(spot);
-    return;
-  }
-  // No selection — so the person has put the cursor where the turn
-  // needs to be cut: where the machine glued the question to the answer.
-  const editor = event.target.closest(".proof-turn-text");
-  const selection = window.getSelection();
-  if (!editor || !selection || !selection.rangeCount) return;
-  const range = selection.getRangeAt(0);
-  if (!editor.contains(range.startContainer)) return;
-  const before = document.createRange();
-  before.selectNodeContents(editor);
-  before.setEnd(range.startContainer, range.startOffset);
-  const offset = before.toString().length;
-  const index = Number(editor.dataset.proofIndex);
-  const turn = PROOF.turns[index];
-  if (!turn || !turn.text.slice(0, offset).trim() || !turn.text.slice(offset).trim()){
-    return;
-  }
-  event.preventDefault();
-  PROOF.manualEdit = null;
-  PROOF.splitAt = {turnIndex:index, turnId:turn.id, offset};
-  renderProofIssues();
-});
-$("proofIssues").addEventListener("click", event => {
-  const split = event.target.closest("[data-split-action]");
-  if (split && PROOF.splitAt){
-    const spot = PROOF.splitAt;
-    PROOF.splitAt = null;
-    if (split.dataset.splitAction === "apply"){
-      const choice = Number(($("splitSpeaker") || {}).value) || 0;
-      remember();
-      if (splitTurn(spot.turnIndex, spot.offset)){
-        if (choice) PROOF.turns[spot.turnIndex + 1].speaker = choice;
-        normalizeTurns();
-        dismissEditHint();
-        afterStructureChange();
-        return;
-      }
-    }
-    renderProof();
-    return;
-  }
-  const button = event.target.closest("[data-manual-action]");
-  if (!button || !PROOF.manualEdit) return;
-  const action = button.dataset.manualAction;
-  if (action === "cancel"){
-    PROOF.manualEdit = null;
-    renderProof();
-    return;
-  }
-  if (action === "speaker"){
-    const edit = PROOF.manualEdit;
-    const turn = PROOF.turns[edit.turnIndex];
-    const choice = speakerCount() > 2
-      ? Number(($("manualSpeaker") || {}).value) || 0
-      : otherSpeaker(turn ? turn.speaker : 1);
-    if (!choice) return;
-    remember();
-    if (moveSelectionToSpeaker(edit, choice)){
-      normalizeTurns();
-      dismissEditHint();
-      afterStructureChange();
-    } else {
-      PROOF.manualEdit = null;
-      renderProof();
-    }
-    return;
-  }
-  const field = $("manualEditInput");
-  applyManualEdit(action === "drop" ? "" : fixDashes((field ? field.value : "").trim()));
-});
-$("proofIssues").addEventListener("keydown", event => {
-  if (event.target.id !== "manualEditInput") return;
-  if (event.key === "Enter"){
-    event.preventDefault();
-    applyManualEdit(fixDashes(event.target.value.trim()));
-  } else if (event.key === "Escape"){
-    PROOF.manualEdit = null;
-    renderProof();
-  }
-});
 $("proofTurns").addEventListener("click", event => {
   if (event.target.closest("[data-pause-turn]")){
     proofAudio().pause();
@@ -5301,7 +4764,7 @@ $("proofTurns").addEventListener("click", event => {
   }
   const listen = event.target.closest("[data-listen-turn]");
   if (listen){
-    playProofTurn(Number(listen.dataset.listenTurn));
+    playProofTurn(turnIndexOf(listen));
     return;
   }
   const mark = event.target.closest("[data-proof-issue]");
@@ -5309,13 +4772,10 @@ $("proofTurns").addEventListener("click", event => {
     selectProofIssue(mark.dataset.proofIssue);
     return;
   }
-  const button = event.target.closest("[data-topic-index]");
+  const button = event.target.closest("[data-topic-toggle]");
   if (!button) return;
-  syncProofTurns();
-  const index = Number(button.dataset.topicIndex);
-  const turn = PROOF.turns[index];
+  const turn = PROOF.turns[turnIndexOf(button)];
   if (!turn) return;
-  remember();
   turn.topic_start = !turn.topic_start;
   turn.topic_reason = turn.topic_start ? "выбрано пользователем" : null;
   PROOF.topicOverrides.set(turn.id, turn.topic_start);
@@ -5391,9 +4851,7 @@ $("proofCoverage").addEventListener("click", event => {
   const row = event.target.closest("[data-show-turn]");
   if (!row) return;
   const index = Number(row.dataset.showTurn);
-  const editor = document.querySelector(
-    `.proof-turn-text[data-proof-index="${index}"]`
-  );
+  const editor = PROOF.turns[index] ? editorOfTurn(PROOF.turns[index].id) : null;
   document.querySelectorAll(".proof-turn.focused")
     .forEach(element => element.classList.remove("focused"));
   if (editor){
@@ -5872,7 +5330,7 @@ $("btnReset").onclick = () => {
   if (!confirm(tr("anon.reset_confirm"))) return;
   state.raw = ""; state.ents = []; state.groups.clear();
   state.active = null; state.off.clear(); state.speakers = []; state.speakerRoles.clear();
-  state.carried = []; state.turns = []; clearTimeout(state.saveTimer);
+  state.carried = []; state.turns = [];
   $("drop").style.display = "";
   $("text").innerHTML = "";
   $("srcName").textContent = "";

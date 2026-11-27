@@ -107,9 +107,9 @@ class OpenInterviewTests(unittest.TestCase):
         interview = self.open()
         for action in (
             lambda: interview.retext(0, 99, "Да."),
-            lambda: interview.split(0, 1),  # at the first word of a turn
+            lambda: interview.split(0, 1, "", "Привет, как дела?"),  # at the start of a turn
+            lambda: interview.split(0, 1, "Привет, как дела?", " "),  # at its end
             lambda: interview.merge(0, 1),  # no turn before the first
-            lambda: interview.assign(0, (3, 4), 2),  # across two turns
             # The second replacement names a word the first one removed.
             lambda: interview.replace(0, [((2, 3), "что"), ((3, 3), "дело?")]),
         ):
@@ -124,7 +124,6 @@ class OpenInterviewTests(unittest.TestCase):
         for change in (
             interview.retext(0, 2, "Хорошо.  А у тебя?"),
             interview.set_speaker(0, 2, 2),
-            interview.assign(0, (5, 6), 2),
             interview.undo(),
             interview.redo(),
         ):
@@ -133,16 +132,33 @@ class OpenInterviewTests(unittest.TestCase):
 
     # -- turns -----------------------------------------------------------------
 
-    def test_a_turn_is_split_at_a_word_and_joined_back(self):
+    def test_a_turn_is_split_at_the_caret_and_joined_back(self):
         interview = self.open()
-        change = interview.split(0, 6)
+        change = interview.split(0, 2, "Хорошо. А ", "у тебя?")
         self.assertEqual(change["order"], [1, 2, 4, 3])
         self.assertEqual([turn["id"] for turn in change["changed"]], [2, 4])
         self.assertEqual(self.texts()[1:3], [(2, "Хорошо. А"), (2, "у тебя?")])
+        self.assertEqual([word.id for word in interview.transcript.turn(4).words], [6, 7])
         self.assert_saved()
         change = interview.merge(change["revision"], 4)
         self.assertEqual(change["order"], [1, 2, 3])
         self.assertEqual(self.texts()[1], (2, "Хорошо. А у тебя?"))
+        self.assert_saved()
+
+    def test_a_split_inside_a_word_cuts_the_word(self):
+        interview = self.open()
+        interview.split(0, 2, "Хоро", "шо. А у тебя?")
+        self.assertEqual(self.texts()[1:3], [(2, "Хоро"), (2, "шо. А у тебя?")])
+        first, second = interview.transcript.turn(2).words[0], interview.transcript.turn(4).words[0]
+        self.assertEqual((first.start, second.end), (10.0, 10.8))  # they share the word's time
+        self.assert_saved()
+        interview.undo()  # one step
+        self.assertEqual(self.texts()[1], (2, "Хорошо. А у тебя?"))
+
+    def test_a_split_takes_typing_that_was_not_saved_yet(self):
+        interview = self.open()
+        interview.split(0, 2, "Хорошо, очень. ", "А у вас?")
+        self.assertEqual(self.texts()[1:3], [(2, "Хорошо, очень."), (2, "А у вас?")])
         self.assert_saved()
 
     def test_a_turn_given_to_another_speaker_stays_a_turn(self):
@@ -160,22 +176,6 @@ class OpenInterviewTests(unittest.TestCase):
         interview.set_speaker(0, 2, 1)
         interview.merge(1, 2)
         self.assertEqual(self.texts()[0], (1, "Привет, как дела? Хорошо. А у тебя?"))
-        self.assert_saved()
-
-    def test_words_inside_a_turn_are_given_to_another_speaker(self):
-        interview = self.open()
-        change = interview.assign(0, (5, 6), 1)
-        self.assertEqual(change["order"], [1, 2, 5, 4, 3])
-        self.assertEqual(self.texts()[1:4], [(2, "Хорошо."), (1, "А у"), (2, "тебя?")])
-        self.assert_saved()
-        interview.undo()  # one step, though it took three edits
-        self.assertEqual(len(self.texts()), 3)
-
-    def test_words_at_the_edge_of_a_turn_are_cut_off_once(self):
-        interview = self.open()
-        change = interview.assign(0, (4, 4), 1)
-        self.assertEqual(change["order"], [1, 2, 4, 3])
-        self.assertEqual(self.texts()[1:3], [(1, "Хорошо."), (2, "А у тебя?")])
         self.assert_saved()
 
     # -- replacing -------------------------------------------------------------
@@ -211,6 +211,37 @@ class OpenInterviewTests(unittest.TestCase):
         self.assertEqual(self.texts()[1], (2, "Плохо."))
         self.assertFalse(interview.view()["can_redo"])
         self.assert_saved()
+
+    def test_a_visit_to_a_turn_is_one_step_however_often_it_was_saved(self):
+        interview = self.open()
+        interview.retext(0, 2, "Хорошо. А у")
+        interview.retext(1, 2, "Хорошо. А у вас", continues=True)
+        interview.retext(2, 2, "Хорошо. А у вас всё?", continues=True)
+        interview.undo()
+        self.assertEqual(self.texts()[1], (2, "Хорошо. А у тебя?"))
+        self.assertFalse(interview.view()["can_undo"])
+        self.assert_saved()
+
+    def test_a_new_visit_or_another_action_starts_a_new_step(self):
+        interview = self.open()
+        interview.retext(0, 2, "Хорошо.")
+        interview.retext(1, 2, "Плохо.")  # came back to the turn later
+        interview.retext(2, 1, "Привет!", continues=True)  # the page is wrong: another turn
+        interview.set_speaker(3, 1, 2)
+        interview.retext(4, 1, "Привет.", continues=True)  # not typing just before
+        for expected in ("Привет!", "Привет!", "Привет, как дела?"):
+            interview.undo()
+            self.assertEqual(self.texts()[0][1], expected)
+        interview.undo()
+        self.assertEqual(self.texts()[1], (2, "Хорошо."))
+
+    def test_a_save_that_changes_nothing_does_not_join_a_visit_to_the_step_before(self):
+        interview = self.open()
+        interview.set_speaker(0, 1, 2)
+        interview.retext(1, 2, "Хорошо. А у тебя?")  # nothing typed yet
+        interview.retext(1, 2, "Хорошо.", continues=True)
+        interview.undo()
+        self.assertEqual(self.texts()[:2], [(2, "Привет, как дела?"), (2, "Хорошо. А у тебя?")])
 
     def test_the_revision_never_repeats(self):
         interview = self.open()
@@ -260,12 +291,15 @@ class OpenInterviewTests(unittest.TestCase):
                 revision = transcript.revision
                 text = " ".join(generator.choices(vocabulary, k=generator.randint(0, 5)))
                 actions = [
-                    lambda: interview.retext(revision, turn.id if turn else 0, text),
+                    lambda: interview.retext(
+                        revision, turn.id if turn else 0, text, generator.random() < 0.5
+                    ),
                     lambda: interview.replace(revision, [((word, last), text)]),
-                    lambda: interview.split(revision, word),
+                    lambda: interview.split(
+                        revision, turn.id if turn else 0, text, generator.choice(vocabulary)
+                    ),
                     lambda: interview.merge(revision, turn.id if turn else 0),
                     lambda: interview.set_speaker(revision, turn.id if turn else 0, generator.randint(1, 3)),
-                    lambda: interview.assign(revision, (word, last), generator.randint(1, 3)),
                     interview.undo,
                     interview.redo,
                 ]

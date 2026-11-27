@@ -48,21 +48,6 @@ def body(name):
     return SCREEN[start:end if end > 0 else len(SCREEN)]
 
 
-class AutosaveTests(unittest.TestCase):
-    def test_a_decision_schedules_a_save(self):
-        self.assertIn("scheduleAnonymizationSave();", body("apply"))
-
-    def test_the_save_writes_the_text_into_the_project(self):
-        code = body("scheduleAnonymizationSave")
-        self.assertIn("carryAnonymizationIntoProof();", code)
-        self.assertIn("saveProjectNow()", code)
-
-    def test_saving_waits_a_moment(self):
-        # Decisions come in a stream; writing the file for each one is wasted work.
-        self.assertRegex(body("scheduleAnonymizationSave"), r"\}, \d{3,4}\);")
-        self.assertIn("clearTimeout(state.saveTimer)", body("scheduleAnonymizationSave"))
-
-
 class KeyStaysOutOfTheProjectTests(unittest.TestCase):
     """The study's rule: the key exists only under a password."""
 
@@ -102,13 +87,6 @@ class NumberingTests(unittest.TestCase):
 
 class CarryTests(unittest.TestCase):
     """Carrying replacements into the text must survive repeated calls."""
-
-    def test_the_turn_map_is_taken_once_when_the_tab_opens(self):
-        # Recomputing later isn't possible: the turns have already been rewritten
-        # by replacements, and the findings' offsets were taken from the original text.
-        self.assertIn("state.turns = mapped.ranges;", body("openAnonymizer"))
-        self.assertIn("for (const {id, start, end} of state.turns)",
-                      body("carryAnonymizationIntoProof"))
 
     def test_a_new_file_forgets_the_previous_map(self):
         self.assertIn("state.turns = [];", body("load"))

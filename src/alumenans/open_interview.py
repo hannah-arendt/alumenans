@@ -23,7 +23,7 @@ from alumenans.document.editing import (
     SplitTurn,
     apply,
 )
-from alumenans.document.transcript import Span, Transcript, Turn, TurnId, WordId, changed_turns
+from alumenans.document.transcript import Span, Transcript, Turn, TurnId, changed_turns
 from alumenans.storage.interview_store import InterviewStore
 
 
@@ -46,6 +46,8 @@ class OpenInterview:
         self._transcript = transcript
         self._undo: list[Transcript] = []
         self._redo: list[Transcript] = []
+        # The turn the person is typing in, if typing was the last action.
+        self._typing: TurnId | None = None
         self._lock = threading.Lock()
 
     @property
@@ -60,10 +62,19 @@ class OpenInterview:
 
     # -- what a person can do ------------------------------------------------
 
-    def retext(self, revision: int, turn_id: TurnId, text: str) -> dict:
-        """The person typed in a turn; `text` is what it reads now."""
+    def retext(self, revision: int, turn_id: TurnId, text: str, continues: bool = False) -> dict:
+        """The person typed in a turn; `text` is what it reads now.
 
-        return self._act(revision, lambda transcript: editing.retext(transcript, turn_id, text)[0])
+        The page saves a turn several times while the person is in it.
+        `continues` says that this is one more save of the same visit: for
+        undo, a visit to a turn is one step."""
+
+        return self._act(
+            revision,
+            lambda transcript: editing.retext(transcript, turn_id, text)[0],
+            typing=turn_id,
+            same_step=continues and self._typing == turn_id,
+        )
 
     def replace(self, revision: int, replacements: Sequence[tuple[Span, str]]) -> dict:
         """Puts new text in place of each span, as one step: accepting a
@@ -78,12 +89,15 @@ class OpenInterview:
 
         return self._act(revision, edit)
 
-    def split(self, revision: int, word_id: WordId) -> dict:
-        """Starts a new turn at a word."""
+    def split(self, revision: int, turn_id: TurnId, before: str, after: str) -> dict:
+        """Cuts a turn in two where the caret is: `before` and `after` are
+        its text on either side. The caret may be inside a word, and the
+        text may hold typing that was not saved yet."""
 
         def edit(transcript: Transcript) -> Transcript:
-            turn, at, _ = _span_in_turn(transcript, (word_id, word_id))
-            return apply(transcript, SplitTurn(turn.id, at))[0]
+            at = len(before.split())
+            transcript, _ = editing.retext(transcript, turn_id, f"{before} {after}")
+            return apply(transcript, SplitTurn(turn_id, at))[0]
 
         return self._act(revision, edit)
 
@@ -106,24 +120,6 @@ class OpenInterview:
             revision, lambda transcript: apply(transcript, SetSpeaker(turn_id, speaker))[0]
         )
 
-    def assign(self, revision: int, span: Span, speaker: int) -> dict:
-        """Gives some words of a turn to another speaker: the turn is cut
-        around them."""
-
-        def edit(transcript: Transcript) -> Transcript:
-            turn, first, count = _span_in_turn(transcript, span)
-            if speaker == turn.speaker:
-                return transcript
-            # The later cut first: the earlier part keeps the identifier.
-            if first + count < len(turn.words):
-                transcript, _ = apply(transcript, SplitTurn(turn.id, first + count))
-            if first > 0:
-                transcript, _ = apply(transcript, SplitTurn(turn.id, first))
-            cut_out = transcript.turns[transcript.positions[span[0]][0]]
-            return apply(transcript, SetSpeaker(cut_out.id, speaker))[0]
-
-        return self._act(revision, edit)
-
     def undo(self) -> dict:
         with self._lock:
             return self._restore(self._undo, self._redo)
@@ -134,7 +130,13 @@ class OpenInterview:
 
     # -- how ------------------------------------------------------------------
 
-    def _act(self, revision: int, edit: Callable[[Transcript], Transcript]) -> dict:
+    def _act(
+        self,
+        revision: int,
+        edit: Callable[[Transcript], Transcript],
+        typing: TurnId | None = None,
+        same_step: bool = False,
+    ) -> dict:
         with self._lock:
             before = self._transcript
             if revision != before.revision:
@@ -142,13 +144,18 @@ class OpenInterview:
             after = edit(before)
             if after is not before:
                 self._store.save(after, before)
-                self._undo.append(before)
+                if not same_step:
+                    self._undo.append(before)
                 self._redo.clear()
                 self._transcript = after
+                self._typing = typing
+            elif typing != self._typing:
+                self._typing = None
             return self._report(before)
 
     def _restore(self, source: list[Transcript], other: list[Transcript]) -> dict:
         before = self._transcript
+        self._typing = None
         if source:
             # A new revision, so that the page can tell this transcript from
             # the one that had the same number before.

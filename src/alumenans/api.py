@@ -12,9 +12,10 @@ from alumenans import i18n
 from alumenans.current_audio import audio_parts, set_current_audio
 from alumenans.detection.subject import set_subject_terms
 from alumenans.i18n import t
+from alumenans.document.editing import EditError
 from alumenans.document.transcript import from_machine_turns
 from alumenans.interview_name import group_parts, parse_interview_name, study_title_from
-from alumenans.open_interview import OpenInterview
+from alumenans.open_interview import OpenInterview, StaleRevision
 from alumenans.paths import state_file
 from alumenans.proofreading import clean, set_study_words
 from alumenans.storage import cipher
@@ -321,6 +322,50 @@ class AppApi:
             except Exception as error:
                 return _failed(error)
             return {"ok": True}
+
+    # -- editing the transcript ------------------------------------------
+
+    def _edit(self, action):
+        """Runs one action on the open interview and replies with what the
+        window has to redraw. If the window was showing an older transcript
+        than the application holds, the reply is `stale` and carries the
+        whole current one."""
+
+        interview = self._interview
+        if interview is None:
+            return {"ok": False, "error": t("api.no_project")}
+        try:
+            return {"ok": True, **action(interview)}
+        except StaleRevision:
+            return {"ok": False, "stale": True, **interview.view()}
+        except EditError as error:
+            return {"ok": False, "error": str(error)}
+        except Exception as error:
+            return _failed(error)
+
+    def interview_retext(self, revision, turn_id, text, continues=False):
+        return self._edit(
+            lambda interview: interview.retext(revision, turn_id, str(text), bool(continues))
+        )
+
+    def interview_split(self, revision, turn_id, before, after):
+        return self._edit(
+            lambda interview: interview.split(revision, turn_id, str(before), str(after))
+        )
+
+    def interview_merge(self, revision, turn_id):
+        return self._edit(lambda interview: interview.merge(revision, turn_id))
+
+    def interview_set_speaker(self, revision, turn_id, speaker):
+        return self._edit(
+            lambda interview: interview.set_speaker(revision, turn_id, int(speaker))
+        )
+
+    def interview_undo(self):
+        return self._edit(lambda interview: interview.undo())
+
+    def interview_redo(self):
+        return self._edit(lambda interview: interview.redo())
 
     def interview_mark_anonymized(self, left=0, turns=None):
         """Records that anonymization was carried through, with the

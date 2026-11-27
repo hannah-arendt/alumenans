@@ -200,6 +200,36 @@ class AppApiTests(unittest.TestCase):
         self.assertEqual(export["interview"]["moderator"], 1)
         self.assertNotIn("Анна", Path(exported["path"]).read_text(encoding="utf-8"))
 
+    def test_edits_from_the_window_are_saved_as_they_are_made(self):
+        self.addCleanup(self.api._close_interview)
+        self.assertFalse(self.api.interview_retext(0, 1, "Да.")["ok"])  # nothing is open
+        self.transcriber.result = transcription((1, "Как вас зовут?"), (2, "Меня зовут Анна."))
+        revision = self.api.interview_create()["state"]["transcript"]["revision"]
+
+        typed = self.api.interview_retext(revision, 2, "Меня зовут Анна Петровна.")
+        self.assertTrue(typed["ok"], typed)
+        self.assertEqual([turn["id"] for turn in typed["changed"]], [2])
+        split = self.api.interview_split(typed["revision"], 2, "Меня зовут ", "Анна Петровна.")
+        self.assertEqual(split["order"], [1, 2, 3])
+        given = self.api.interview_set_speaker(split["revision"], 3, "1")
+        self.assertEqual(given["changed"][0]["speaker"], 1)
+        self.assertTrue(self.api.interview_undo()["can_redo"])
+        latest = self.api.interview_redo()["revision"]
+
+        # The window still shows the first version: it gets the current one.
+        stale = self.api.interview_merge(revision, 3)
+        self.assertEqual((stale["ok"], stale["stale"], stale["revision"]), (False, True, latest))
+        self.assertEqual(len(stale["changed"]), 3)
+        # Turns by different speakers are not joined, and nothing changes.
+        refused = self.api.interview_merge(latest, 3)
+        self.assertFalse(refused["ok"])
+        self.assertNotIn("stale", refused)
+
+        self.assertEqual(
+            self.texts(self.api.interview_load()["state"]),
+            ["Как вас зовут?", "Меня зовут", "Анна Петровна."],
+        )
+
     def test_choosing_another_recording_closes_the_interview(self):
         self.transcriber.result = transcription((1, "Как вас зовут?"))
         self.api.interview_create()
