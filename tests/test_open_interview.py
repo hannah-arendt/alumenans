@@ -10,7 +10,7 @@ from alumenans.document.editing import EditError
 from alumenans.document.transcript import from_machine_turns, validate
 from alumenans.open_interview import OpenInterview, StaleRevision
 from alumenans.storage.cipher import StudySecret
-from alumenans.storage.interview_store import InterviewStore
+from alumenans.storage.interview_store import Details, InterviewStore
 
 
 def machine_turn(speaker, text, start, step=1.0):
@@ -27,7 +27,7 @@ class OpenInterviewTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
         self.store = InterviewStore(
-            Path(self.temporary.name, "inna.interview.alumenans"), StudySecret(b"s" * 16, b"k" * 32)
+            Path(self.temporary.name, "recording.interview.alumenans"), StudySecret(b"s" * 16, b"k" * 32)
         )
 
     def tearDown(self):
@@ -43,7 +43,7 @@ class OpenInterviewTests(unittest.TestCase):
             machine_turn(1, "Тоже неплохо, спасибо.", 20.0),
         )
         machine = from_machine_turns(turns)
-        self.store.create(machine)
+        self.store.create(machine, Details())
         self.interview = OpenInterview(self.store, machine)
         return self.interview
 

@@ -3,7 +3,8 @@
 One encrypted file per interview, in the study folder. It holds the
 transcript as transcription returned it, written once and never changed,
 and the transcript as it stands now. An edit rewrites the rows of the turns
-it touched, in one transaction.
+it touched, in one transaction. Beside the transcript it holds what the
+person wrote about the interview, and what anonymization produced.
 
 A file made by another version of the program is refused: there is no
 conversion between versions.
@@ -12,7 +13,10 @@ conversion between versions.
 from __future__ import annotations
 
 import json
+import time
 import zlib
+from contextlib import closing
+from dataclasses import dataclass
 from pathlib import Path
 
 # The SQLCipher driver under the stdlib name: its exceptions are its own.
@@ -64,11 +68,50 @@ CREATE TABLE words (
 );
 
 CREATE INDEX words_by_turn ON words (turn_id, ordinal);
+
+-- What is known about the interview besides its transcript. One row.
+CREATE TABLE interview (
+    id        INTEGER PRIMARY KEY CHECK (id = 1),
+    recording TEXT NOT NULL,  -- the recording's file name
+    duration  REAL NOT NULL,
+    moderator INTEGER,        -- the interviewer's speaker number, if known
+    guide     TEXT NOT NULL,
+    notes     TEXT NOT NULL
+);
+
+-- The text as it was when anonymization was last finished: the turns that
+-- are exported, compressed. One row, absent until then.
+CREATE TABLE anonymized_transcript (
+    id          INTEGER PRIMARY KEY CHECK (id = 1),
+    finished_at REAL NOT NULL,
+    unresolved  INTEGER NOT NULL,  -- findings the person has not decided on
+    content     BLOB NOT NULL
+);
+
+-- The anonymization key, only as the password-protected archive that was
+-- also saved to disk: this file is passed to colleagues, and a readable key
+-- in it would undo the anonymization. One row.
+CREATE TABLE key_archive (
+    id      INTEGER PRIMARY KEY CHECK (id = 1),
+    content BLOB NOT NULL,
+    entries INTEGER NOT NULL
+);
 """
 
 
 class InterviewFileError(RuntimeError):
     """The interview file can't be used; the text is for the person."""
+
+
+@dataclass(frozen=True)
+class Details:
+    """What is known about an interview besides its transcript."""
+
+    recording: str = ""
+    duration: float = 0.0
+    moderator: int | None = None
+    guide: str = ""
+    notes: str = ""
 
 
 class InterviewStore:
@@ -109,14 +152,26 @@ class InterviewStore:
             self._connection.close()
             self._connection = None
 
-    def create(self, machine: Transcript) -> None:
-        """Starts the interview from a fresh transcription, replacing
-        whatever the file held."""
+    def create(self, machine: Transcript, details: Details) -> None:
+        """Starts the interview from a fresh transcription, replacing the
+        transcript, the details and the anonymized text that the file held.
+        A key archive stays: it may be the key to a text already sent out."""
 
         connection = self.connect()
         with connection:
             connection.execute("DELETE FROM turns")
             connection.execute("DELETE FROM document")
+            connection.execute("DELETE FROM anonymized_transcript")
+            connection.execute(
+                "INSERT OR REPLACE INTO interview VALUES (1, ?, ?, ?, ?, ?)",
+                (
+                    details.recording,
+                    details.duration,
+                    details.moderator,
+                    details.guide,
+                    details.notes,
+                ),
+            )
             connection.execute(
                 "INSERT OR REPLACE INTO machine_transcript VALUES (1, ?)",
                 (zlib.compress(json.dumps(_as_json(machine)).encode("utf-8")),),
@@ -168,6 +223,57 @@ class InterviewStore:
             )
             self._write(connection, transcript, [transcript.turn(turn_id) for turn_id in changed])
 
+    # -- beside the transcript ------------------------------------------------
+
+    def details(self) -> Details | None:
+        row = self.connect().execute(
+            "SELECT recording, duration, moderator, guide, notes FROM interview"
+        ).fetchone()
+        return None if row is None else Details(*row)
+
+    def save_context(self, guide: str, notes: str) -> None:
+        """What the person wrote for this interview: its guide and notes."""
+
+        connection = self.connect()
+        with connection:
+            connection.execute("UPDATE interview SET guide = ?, notes = ?", (guide, notes))
+
+    def save_anonymized(self, turns: list[dict], unresolved: int) -> None:
+        """Keeps the anonymized turns, as they will be exported."""
+
+        connection = self.connect()
+        with connection:
+            connection.execute(
+                "INSERT OR REPLACE INTO anonymized_transcript VALUES (1, ?, ?, ?)",
+                (time.time(), unresolved, zlib.compress(json.dumps(turns).encode("utf-8"))),
+            )
+
+    def anonymized(self) -> dict | None:
+        """`finished_at`, `unresolved` and `turns`; None if anonymization was
+        never finished."""
+
+        row = self.connect().execute(
+            "SELECT finished_at, unresolved, content FROM anonymized_transcript"
+        ).fetchone()
+        if row is None:
+            return None
+        return {
+            "finished_at": row[0],
+            "unresolved": row[1],
+            "turns": json.loads(zlib.decompress(row[2])),
+        }
+
+    def save_key_archive(self, content: bytes, entries: int) -> None:
+        connection = self.connect()
+        with connection:
+            connection.execute(
+                "INSERT OR REPLACE INTO key_archive VALUES (1, ?, ?)", (content, entries)
+            )
+
+    def key_archive(self) -> bytes | None:
+        row = self.connect().execute("SELECT content FROM key_archive").fetchone()
+        return None if row is None else bytes(row[0])
+
     @staticmethod
     def _write(connection: sqlite3.Connection, transcript: Transcript, turns) -> None:
         """Inserts `turns`, which the file doesn't hold, and makes the order
@@ -202,6 +308,36 @@ class InterviewStore:
             "INSERT OR REPLACE INTO document VALUES (1, ?, ?, ?)",
             (transcript.revision, transcript.next_word_id, transcript.next_turn_id),
         )
+
+
+def summarize(path: str | Path, secret: StudySecret) -> dict | None:
+    """What the list of interviews shows about one existing file, read
+    without changing it. None for a file that holds no interview yet.
+
+    Raises cipher.CipherError for a file this study's password does not
+    open, and InterviewFileError for one made by another version."""
+
+    with closing(cipher.connect(path, secret, read_only=True)) as connection:
+        if _schema_version(connection) != str(SCHEMA_VERSION):
+            raise InterviewFileError(t("project.other_version"))
+        details = connection.execute("SELECT recording, duration FROM interview").fetchone()
+        if details is None:
+            return None
+        turns, edited, key_entries = connection.execute(
+            "SELECT (SELECT count(*) FROM turns),"
+            # Turns in which a person typed something.
+            " (SELECT count(DISTINCT turn_id) FROM words WHERE author = ?),"
+            " (SELECT coalesce(sum(entries), 0) FROM key_archive)",
+            (Author.HUMAN.value,),
+        ).fetchone()
+        return {
+            "path": str(path),
+            "recording": details[0],
+            "duration": details[1],
+            "turns": turns,
+            "edited": edited,
+            "key_entries": key_entries,
+        }
 
 
 def _schema_version(connection: sqlite3.Connection) -> str | None:
