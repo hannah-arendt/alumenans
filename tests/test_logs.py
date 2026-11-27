@@ -50,10 +50,10 @@ class WindowErrorTests(unittest.TestCase):
         self.assertTrue(logged.output[0].startswith("WARNING"))
 
     def test_an_exception_in_a_request_is_logged_with_its_traceback(self):
-        with patch("alumenans.server.analyze_proofreading", side_effect=ValueError("boom")):
+        with patch("alumenans.server.find_spans", side_effect=ValueError("boom")):
             with self.assertLogs("alumenans.server", "ERROR") as logged:
                 with self.assertRaises(urllib.error.HTTPError):
-                    self.post("/proofread", {"turns": []})
+                    self.post("/analyze", {"text": "Text."})
         self.assertIn("Traceback", logged.output[0])
         self.assertIn("boom", logged.output[0])
 

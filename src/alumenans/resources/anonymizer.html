@@ -2173,8 +2173,8 @@ const PROOF = {
   turns:[],
   issues:[],
   stats:{issues:0, topics:0},
-  ignored:new Set(),
-  kept:new Set(),
+  dismissed:new Set(),
+  checkTimer:null,
   topicOverrides:new Map(),
   replacementDrafts:new Map(),
   revision:0,
@@ -2503,8 +2503,8 @@ function resetProofreading(){
   PROOF.turns = [];
   PROOF.issues = [];
   PROOF.stats = {issues:0, topics:0};
-  PROOF.ignored.clear();
-  PROOF.kept.clear();
+  PROOF.dismissed.clear();
+  clearTimeout(PROOF.checkTimer);
   PROOF.topicOverrides.clear();
   PROOF.replacementDrafts.clear();
   PROOF.revision = 0;
@@ -2550,10 +2550,8 @@ const PROJECT = {
 };
 
 /* Takes the transcript, or a change to it, as the application reports it:
-   the turns that are new or different, and the order of all turns. Flags on
-   a changed turn no longer point at the right letters and are dropped,
-   unless the caller has moved them itself. */
-function takeTranscript(change, keepFlags = false){
+   the turns that are new or different, and the order of all turns. */
+function takeTranscript(change){
   const turns = new Map(PROOF.turns.map(turn => [turn.id, turn]));
   for (const turn of change.changed){
     const old = turns.get(turn.id) || {};
@@ -2564,15 +2562,40 @@ function takeTranscript(change, keepFlags = false){
       ...turn,
       text:turn.words.map(word => word.text).join(" ")
     });
-    if (!keepFlags) removeProofIssuesForTurn(turn.id);
   }
   PROOF.turns = change.order.map(id => turns.get(id));
   PROOF.revision = change.revision;
   PROOF.canUndo = change.can_undo;
   PROOF.canRedo = change.can_redo;
-  const places = new Map(PROOF.turns.map((turn, index) => [turn.id, index]));
-  PROOF.issues = PROOF.issues.filter(issue => places.has(issue.turn_id));
-  for (const issue of PROOF.issues) issue.turn_index = places.get(issue.turn_id);
+  placeFlags();
+}
+
+/* A flag is on a run of words of one turn. This finds where each flag's
+   words are now, and drops the flags whose words are gone or no longer read
+   what the flag was about. */
+function placeFlags(){
+  const places = new Map();
+  PROOF.turns.forEach((turn, turnIndex) => {
+    turn.words.forEach((word, wordIndex) => places.set(word.id, [turnIndex, wordIndex]));
+  });
+  PROOF.issues = PROOF.issues.filter(issue => {
+    const first = places.get(issue.span[0]);
+    const last = places.get(issue.span[1]);
+    if (!first || !last || first[0] !== last[0] || last[1] < first[1]) return false;
+    const turn = PROOF.turns[first[0]];
+    issue.turn_index = first[0];
+    issue.turn_id = turn.id;
+    issue.first = first[1];
+    issue.last = last[1];
+    issue.time = turn.words[first[1]].start;
+    return flagText(issue).includes(issue.text);
+  });
+}
+
+/* The words a flag is on, as text. */
+function flagText(issue){
+  return PROOF.turns[issue.turn_index].words
+    .slice(issue.first, issue.last + 1).map(word => word.text).join(" ");
 }
 
 /* Every edit is made by the application, which holds the transcript: the
@@ -2580,12 +2603,15 @@ function takeTranscript(change, keepFlags = false){
    at a time and in order, each on the transcript the one before it left. */
 let EDITS = Promise.resolve();
 
-function sendEdit(call, keepFlags = false){
+function sendEdit(call){
   const run = async () => {
     try {
       const reply = await call(PROOF.revision);
       // A stale reply carries the whole transcript the application holds.
-      if (reply.ok || reply.stale) takeTranscript(reply, keepFlags);
+      if (reply.ok || reply.stale){
+        takeTranscript(reply);
+        scheduleCheck();
+      }
       return reply;
     } catch (error){
       return {ok:false, error:error.message || String(error)};
@@ -2695,8 +2721,6 @@ function resumeSavedProject(){
    a person to correct a word they can't hear, we can let them hear that
    word: a click puts playback at exactly the right second. */
 
-const PROOF_WORD_PATTERN = "[0-9A-Za-zА-Яа-яЁё][0-9A-Za-zА-Яа-яЁё'’·-]*";
-
 /* A single word torn out of the flow is almost unrecognisable by ear: the ear
    recognises a word by what came before it. So the marks stay per-word —
    otherwise you can't hit the right spot in a forty-minute monologue — but what
@@ -2724,100 +2748,40 @@ function proofAudio(){
   return $("proofAudio");
 }
 
-function turnWordStamps(turn){
-  const stamps = [];
-  const start = Number(turn.start) || 0;
-  for (const word of turn.words || []){
-    const parts = String(word.text || "").match(new RegExp(PROOF_WORD_PATTERN, "g"));
-    if (!parts || !parts.length) continue;
-    const from = Number(word.start);
-    const to = Number(word.end);
-    const left = Number.isFinite(from) ? from : start;
-    const right = Number.isFinite(to) && to > left ? to : left;
-    for (let index = 0; index < parts.length; index++){
-      stamps.push({
-        start:left + (right - left) * index / parts.length,
-        end:left + (right - left) * (index + 1) / parts.length
-      });
-    }
-  }
-  return stamps;
-}
-
-/* Phrase boundaries: a full stop, exclamation or question mark between words,
-   a noticeable pause, or a piece that is too long. Recognition on the Python
-   side cuts phrases exactly the same way — here we just have no access to the same data. */
-function phraseRangesFor(text, matches, stamps){
-  const ranges = [];
+/* A turn as its words, each in an element that knows when it is heard and
+   which phrase it belongs to: playback highlights the word and plays the
+   phrase. A phrase ends at a full stop, exclamation or question mark, at a
+   noticeable pause, or when it has become too long. The flag being looked
+   at is marked on its words. */
+function proofTurnHtml(turn, turnIndex){
+  const words = turn.words;
+  const flag = activeFlagIn(turnIndex);
+  const phraseOf = [];
   let first = 0;
-  for (let index = 0; index < matches.length; index++){
-    const stamp = stamps[index];
-    const next = stamps[index + 1];
-    const between = index + 1 < matches.length
-      ? text.slice(matches[index][1], matches[index + 1][0])
-      : "";
-    const sentenceEnd = /[.!?…]/.test(between);
-    const longPause = stamp && next && next.start - stamp.end > PHRASE_GAP;
-    const tooLong = stamp && stamps[first]
-      && stamp.end - stamps[first].start > PHRASE_LIMIT;
-    if (index + 1 >= matches.length || sentenceEnd || longPause || tooLong){
-      ranges.push({
-        from:first,
-        to:index,
-        start:stamps[first] ? stamps[first].start : 0,
-        end:stamp ? stamp.end : 0
-      });
+  words.forEach((word, index) => {
+    const next = words[index + 1];
+    const sentenceEnd = /[.!?…][^\p{L}\p{N}]*$/u.test(word.text);
+    const longPause = next && next.start - word.end > PHRASE_GAP;
+    const tooLong = word.end - words[first].start > PHRASE_LIMIT;
+    if (!next || sentenceEnd || longPause || tooLong){
+      const phrase = {start:words[first].start, end:word.end};
+      for (let inside = first; inside <= index; inside++) phraseOf[inside] = phrase;
       first = index + 1;
     }
-  }
-  return ranges;
-}
-
-function proofTurnHtml(turn, turnIndex){
-  const text = String(turn.text || "");
-  const issues = proofIssueIntervals(turnIndex);
-  const matches = [];
-  const pattern = new RegExp(PROOF_WORD_PATTERN, "g");
-  let match;
-  while ((match = pattern.exec(text)) !== null){
-    matches.push([match.index, match.index + match[0].length]);
-  }
-  const stamps = turnWordStamps(turn);
-  const audible = PLAYER.available && stamps.length > 0 && matches.length > 0;
-  const fallback = {start:Number(turn.start) || 0, end:Number(turn.end) || 0};
-  const stampFor = index => stamps[index] || stamps[stamps.length - 1] || fallback;
-  const phrases = audible ? phraseRangesFor(text, matches, stamps) : [];
-  const phraseOf = new Array(matches.length).fill(0);
-  phrases.forEach((phrase, order) => {
-    for (let index = phrase.from; index <= phrase.to; index++) phraseOf[index] = order;
   });
-
-  const segment = (from, to) => {
-    if (!audible) return esc(text.slice(from, to));
-    let html = "", position = from;
-    for (let index = 0; index < matches.length; index++){
-      const [wordStart, wordEnd] = matches[index];
-      if (wordStart < from || wordEnd > to) continue;
-      const phrase = phrases[phraseOf[index]] || fallback;
-      html += esc(text.slice(position, wordStart));
-      html += `<span class="pw" data-t="${stampFor(index).start.toFixed(2)}"` +
-        ` data-ps="${phrase.start.toFixed(2)}" data-pe="${phrase.end.toFixed(2)}">` +
-        `${esc(text.slice(wordStart, wordEnd))}</span>`;
-      position = wordEnd;
+  let html = "";
+  words.forEach((word, index) => {
+    if (index) html += " ";
+    if (flag && index === flag.first){
+      html += `<mark class="proof-flag" data-kind="${escAttr(flag.kind)}" ` +
+        `data-proof-issue="${escAttr(flag.id)}">`;
     }
-    return html + esc(text.slice(position, to));
-  };
-
-  let html = "", position = 0;
-  for (const issue of issues){
-    const start = Math.max(position, Math.min(text.length, issue.start));
-    const end = Math.max(start, Math.min(text.length, issue.end));
-    html += segment(position, start);
-    html += `<mark class="proof-flag" data-kind="${escAttr(issue.kind)}" ` +
-      `data-proof-issue="${escAttr(issue.id)}">${segment(start, end)}</mark>`;
-    position = end;
-  }
-  return html + segment(position, text.length);
+    html += `<span class="pw" data-t="${word.start.toFixed(2)}"` +
+      ` data-ps="${phraseOf[index].start.toFixed(2)}" data-pe="${phraseOf[index].end.toFixed(2)}">` +
+      `${esc(word.text)}</span>`;
+    if (flag && index === flag.last) html += "</mark>";
+  });
+  return html;
 }
 
 function indexPlayableWords(){
@@ -3068,33 +3032,13 @@ function isTypingTarget(node){
   return node.isContentEditable || tag === "INPUT" || tag === "TEXTAREA";
 }
 
-function proofIssueIntervals(turnIndex){
-  if (PROOF.dirty || !PROOF.activeIssueId) return [];
-  const source = PROOF.issues
-    .filter(issue => issue.id === PROOF.activeIssueId)
-    .filter(issue => issue.turn_index === turnIndex && !PROOF.ignored.has(issue.id))
-    .filter(issue => Number.isInteger(issue.start) && Number.isInteger(issue.end))
-    .filter(issue => issue.end > issue.start);
-  return source.slice(0, 1);
+function activeFlagIn(turnIndex){
+  if (PROOF.dirty) return null;
+  return PROOF.issues.find(
+    issue => issue.id === PROOF.activeIssueId && issue.turn_index === turnIndex
+  ) || null;
 }
 
-function removeProofIssuesForTurn(turnId){
-  const removed = PROOF.issues.filter(
-    issue => issue.turn_id === turnId && !PROOF.ignored.has(issue.id)
-  );
-  if (!removed.length) return;
-  const removedIds = new Set(removed.map(issue => issue.id));
-  PROOF.issues = PROOF.issues.filter(issue => !removedIds.has(issue.id));
-  removedIds.forEach(id => {
-    PROOF.ignored.delete(id);
-    PROOF.replacementDrafts.delete(id);
-  });
-  PROOF.reviewedCount += removed.length;
-  PROOF.stats.issues = visibleProofIssues().length;
-  if (removedIds.has(PROOF.activeIssueId)){
-    PROOF.activeIssueId = visibleProofIssues()[0]?.id || "";
-  }
-}
 
 /* ---------- undo and redo ---------- */
 
@@ -3362,16 +3306,9 @@ function turnIndexOf(node){
 }
 
 function visibleProofIssues(){
-  return PROOF.issues.filter(issue => !PROOF.ignored.has(issue.id));
+  return PROOF.issues;
 }
 
-function proofIssueDecisionKey(issue){
-  return [
-    issue.kind || "",
-    issue.turn_id || "",
-    String(issue.text || "").trim().toLocaleLowerCase("ru")
-  ].join("|");
-}
 
 function activeProofIssue(){
   const issues = visibleProofIssues();
@@ -3508,58 +3445,43 @@ function renderProof(){
   renderProofSummary();
 }
 
-async function runProofreading(){
+/* Asks the application to check the transcript. `quiet` is the check that
+   follows an edit: it does not announce itself, and it leaves the person on
+   the flag they were looking at. */
+async function runProofreading(quiet = false){
   if (!PROOF.turns.length) return false;
+  clearTimeout(PROOF.checkTimer);
   syncProofNotes();
   syncProofGuide();
-  PROOF.loading = true;
-  PROOF.error = "";
-  PROOF.emailError = "";
-  renderProof();
+  if (!quiet){
+    PROOF.loading = true;
+    PROOF.error = "";
+    PROOF.emailError = "";
+    renderProof();
+  }
   try {
-    const response = await localFetch("/proofread", {
-      method:"POST",
-      headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({
-        turns:PROOF.turns,
-        notes:PROOF.notes,
-        guide:PROOF.guide
-      })
-    });
-    const payload = await response.json();
-    if (!response.ok || payload.error){
-      throw new Error(payload.error || tr("error.check_transcript"));
+    const found = await appCall("interview_check", PROOF.guide, PROOF.notes);
+    if (!found.ok) throw new Error(found.error || tr("error.check_transcript"));
+    PROOF.loading = false;
+    if (found.revision !== PROOF.revision){
+      // The transcript was edited while it was being checked.
+      scheduleCheck();
+      return false;
     }
-    /* The check read the turns as they were when it was asked. A turn the
-       person has edited since then keeps its text, and gets no flags: their
-       places are those of the older text. */
-    const checked = new Map((payload.turns || []).map(turn => [turn.id, turn]));
-    const places = new Map();
-    PROOF.turns.forEach((turn, index) => {
-      const seen = checked.get(turn.id);
-      if (!seen || seen.text !== turn.text) return;
-      places.set(turn.id, index);
+    const topics = new Set(found.topics);
+    for (const turn of PROOF.turns){
       turn.topic_start = PROOF.topicOverrides.has(turn.id)
-        ? PROOF.topicOverrides.get(turn.id) : seen.topic_start;
-      turn.topic_reason = seen.topic_reason;
-    });
-    PROOF.issues = (payload.issues || [])
-      .filter(issue => places.has(issue.turn_id))
-      .filter(issue => !PROOF.kept.has(proofIssueDecisionKey(issue)));
-    for (const issue of PROOF.issues) issue.turn_index = places.get(issue.turn_id);
-    PROOF.ignored.clear();
+        ? PROOF.topicOverrides.get(turn.id) : topics.has(turn.id);
+    }
+    PROOF.issues = found.flags.filter(flag => !PROOF.dismissed.has(flag.id));
+    placeFlags();
     PROOF.replacementDrafts.clear();
-    PROOF.activeIssueId = PROOF.issues.length ? PROOF.issues[0].id : "";
-    PROOF.reviewTotal = PROOF.issues.length;
-    PROOF.reviewedCount = 0;
-    PROOF.stats = payload.stats || {issues:0, topics:0};
+    PROOF.stats = {issues:PROOF.issues.length, topics:topics.size};
     PROOF.dirty = false;
     PROOF.notesDirty = false;
     PROOF.guideDirty = false;
-    PROOF.loading = false;
-    renderProof();
-    scheduleProjectSave();
-    void runCoverage();
+    keepingScroll(renderProof);
+    if (!quiet) void runCoverage();
     return true;
   } catch (error) {
     PROOF.loading = false;
@@ -3567,6 +3489,13 @@ async function runProofreading(){
     renderProof();
     return false;
   }
+}
+
+/* An edit changes what there is to flag. The check runs again shortly
+   after the last edit, not after each keystroke's save. */
+function scheduleCheck(){
+  clearTimeout(PROOF.checkTimer);
+  PROOF.checkTimer = setTimeout(() => void runProofreading(true), 800);
 }
 
 async function prepareProofreading(){
@@ -3652,17 +3581,16 @@ function moveProofIssue(offset){
   if (next) selectProofIssue(next.id, true);
 }
 
+/* The person has looked at the flag and leaves the text as it is. The flag
+   does not come back while its words stay the same. */
 function keepProofIssue(issue){
-  const issues = visibleProofIssues();
-  const index = issues.findIndex(item => item.id === issue.id);
-  PROOF.kept.add(proofIssueDecisionKey(issue));
-  PROOF.ignored.add(issue.id);
+  const index = PROOF.issues.indexOf(issue);
+  PROOF.dismissed.add(issue.id);
+  PROOF.issues = PROOF.issues.filter(item => item !== issue);
   PROOF.reviewedCount += 1;
-  const remaining = visibleProofIssues();
-  const next = remaining[Math.min(Math.max(0, index), remaining.length - 1)] || null;
+  const next = PROOF.issues[Math.min(Math.max(0, index), PROOF.issues.length - 1)] || null;
   PROOF.activeIssueId = next ? next.id : "";
   renderProof();
-  scheduleProjectSave();
   if (next) focusProofIssue(next);
 }
 
@@ -3674,76 +3602,29 @@ function keepProofIssue(issue){
    must change exactly as the text changes. Then the turn can still be
    listened to, and «Послушать» ("Listen") lands on the right sentence. */
 
-function healSeam(text, at){
-  let head = text.slice(0, at).replace(/[ \t]+$/, "");
-  let tail = text.slice(at).replace(/^[ \t]+/, "");
-  if (!head){
-    // The start of a phrase was deleted: the punctuation mark lost its word,
-    // and the next word now begins the sentence.
-    tail = tail.replace(/^[.!?…,;:]+\s*/, "");
-    tail = tail.replace(/^([а-яёa-z])/, (m) => m.toLocaleUpperCase("ru"));
-  }
-  // Keep the comma: it more often belongs to the boundary between clauses,
-  // than to the deleted word.
-  const join = head && tail && !/^[.!?…,;:)»]/.test(tail) ? " " : "";
-  return (head + join + tail).replace(/\s{2,}/g, " ").trim();
-}
 
 /* Puts `replacement` in place of the flagged text. The other flags of the
    turn stay, moved by as many characters as the text grew or shrank. */
 async function replaceProofIssue(issue, replacement){
   await EDITS;   // what was being typed is saved first
-  const turn = PROOF.turns[issue.turn_index];
-  if (!turn) return;
-  let start = issue.start;
-  let end = issue.end;
-  if (turn.text.slice(start, end) !== issue.text){
-    start = turn.text.indexOf(issue.text);
-    if (start < 0){
-      removeProofIssuesForTurn(turn.id);
-      renderProof();
-      return;
-    }
-    end = start + issue.text.length;
-  }
-  const text = replacement
-    ? turn.text.slice(0, start) + replacement + turn.text.slice(end)
-    : healSeam(turn.text.slice(0, start) + turn.text.slice(end), start);
+  if (!PROOF.issues.includes(issue)) return;
+  // The flag may be on part of its words: a word without its comma, say.
+  // What lies around that part stays.
+  const whole = flagText(issue);
+  const at = whole.indexOf(issue.text);
+  const text = whole.slice(0, at) + replacement + whole.slice(at + issue.text.length);
+  const index = PROOF.issues.indexOf(issue);
   const reply = await sendEdit(
-    revision => appCall("interview_retext", revision, turn.id, text), true);
-  if (!reply.ok){
-    renderProof();
-    return;
+    revision => appCall("interview_replace", revision, [[issue.span, text]]));
+  if (reply.ok){
+    PROOF.issues = PROOF.issues.filter(item => item !== issue);
+    PROOF.reviewedCount += 1;
+    const next = PROOF.issues[Math.min(Math.max(0, index), PROOF.issues.length - 1)] || null;
+    PROOF.activeIssueId = next ? next.id : "";
   }
-  const issuesBefore = visibleProofIssues();
-  const currentIndex = issuesBefore.findIndex(item => item.id === issue.id);
-  const delta = text.length - turn.text.length;
-  let removed = 0;
-  PROOF.issues = PROOF.issues.filter(item => {
-    if (item.id === issue.id){
-      removed += 1;
-      return false;
-    }
-    if (item.turn_index !== issue.turn_index) return true;
-    if (item.end <= start) return true;
-    if (item.start >= end){
-      item.start += delta;
-      item.end += delta;
-      return true;
-    }
-    removed += 1;
-    return false;
-  });
-  PROOF.replacementDrafts.delete(issue.id);
-  PROOF.reviewedCount += Math.max(1, removed);
-  const remaining = visibleProofIssues();
-  const next = remaining[
-    Math.min(Math.max(0, currentIndex), remaining.length - 1)
-  ] || null;
-  PROOF.activeIssueId = next ? next.id : "";
-  PROOF.stats.issues = remaining.length;
   renderProof();
-  if (next) focusProofIssue(next);
+  const active = activeProofIssue();
+  if (active) focusProofIssue(active);
 }
 
 /* ---------- replace throughout the text ---------- */
@@ -3793,37 +3674,37 @@ function startsCapital(value){
     && first === first.toLocaleUpperCase("ru");
 }
 
+/* A word without the punctuation at its edges, and that punctuation. */
+function wordParts(text){
+  const [, before, core, after] = /^([^\p{L}\p{N}]*)(.*?)([^\p{L}\p{N}]*)$/u.exec(text);
+  return {before, core, after};
+}
+
 function collectSimilarForms(fragment){
   const size = Math.max(1, (String(fragment).trim().split(/\s+/) || []).length);
   const target = batchKey(fragment);
   if (target.length < 4) return [];
   const named = startsCapital(fragment);
   const groups = new Map();
-
-  PROOF.turns.forEach((turn, turnIndex) => {
-    const text = String(turn.text || "");
-    const matches = [...text.matchAll(new RegExp(PROOF_WORD_PATTERN, "g"))];
-    for (let index = 0; index + size <= matches.length; index++){
-      const from = matches[index].index;
-      const last = matches[index + size - 1];
-      const to = last.index + last[0].length;
-      const piece = text.slice(from, to);
-      // Between the words of a compound name only a space and a hyphen are allowed:
-      // otherwise a piece across a comma or full stop gets into the finding.
-      if (size > 1 && /[^\s-]/.test(piece.replace(new RegExp(PROOF_WORD_PATTERN, "g"), ""))){
-        continue;
-      }
+  PROOF.turns.forEach(turn => {
+    const parts = turn.words.map(word => wordParts(word.text));
+    for (let index = 0; index + size <= parts.length; index++){
+      const run = parts.slice(index, index + size);
+      // Inside a name of several words there is no punctuation: otherwise a
+      // piece across a comma or a full stop gets into the finding.
+      if (run.some((part, order) => !part.core
+          || (order > 0 && part.before) || (order < size - 1 && part.after))) continue;
+      const piece = run.map(part => part.core).join(" ");
       const score = formSimilarity(piece, fragment);
       if (score < BATCH_MINIMUM) continue;
       if (batchKey(piece)[0] !== target[0]) continue;
-
-      const key = piece;
-      if (!groups.has(key)){
+      if (!groups.has(piece)){
         // A name is written with a capital letter. If the word being checked is a proper
         // noun and the finding is lowercase, it is most likely a different word altogether:
         // «Морем» versus «плыли морем» ("sailed by sea"). We show it but don't tick it.
         const sameCase = !named || startsCapital(piece);
-        groups.set(key, {
+        const texts = turn.words.map(word => word.text);
+        groups.set(piece, {
           form:piece,
           score,
           named,
@@ -3831,18 +3712,17 @@ function collectSimilarForms(fragment){
           known:false,
           checked:sameCase && score >= BATCH_CONFIDENT,
           places:[],
-          sample:""
+          sample:"…" + texts.slice(Math.max(0, index - 5), index).join(" ")
+            + " «" + piece + "» " + texts.slice(index + size, index + size + 5).join(" ") + "…"
         });
       }
-      const group = groups.get(key);
-      group.places.push({turnIndex, start:from, end:to});
-      if (!group.sample){
-        group.sample = "…" + text.slice(Math.max(0, from - 34), from)
-          + "«" + piece + "»" + text.slice(to, to + 34) + "…";
-      }
+      groups.get(piece).places.push({
+        span:[turn.words[index].id, turn.words[index + size - 1].id],
+        before:run[0].before,
+        after:run[size - 1].after
+      });
     }
   });
-
   return [...groups.values()].sort(
     (left, right) => right.score - left.score || right.places.length - left.places.length
   );
@@ -3959,42 +3839,27 @@ function renderProofBatch(){
 async function applyProofBatch(){
   const batch = PROOF.batch;
   if (!batch) return;
-  const places = [];
+  const replacements = [];
   for (const group of batch.groups){
-    if (group.checked) places.push(...group.places.map(place => ({...place, form:group.form})));
-  }
-  if (!places.length) return;
-  await EDITS;   // what was being typed is saved first
-
-  const byTurn = new Map();
-  for (const place of places){
-    if (!byTurn.has(place.turnIndex)) byTurn.set(place.turnIndex, []);
-    byTurn.get(place.turnIndex).push(place);
-  }
-
-  for (const [turnIndex, list] of byTurn){
-    const turn = PROOF.turns[turnIndex];
-    if (!turn) continue;
-    let text = turn.text;
-    // From the end to the start: otherwise each replacement shifts the following offsets.
-    list.sort((left, right) => right.start - left.start);
-    for (const place of list){
-      if (text.slice(place.start, place.end) !== place.form) continue;
-      let replacement = batch.replacement;
-      if (place.form[0] === place.form[0].toLocaleUpperCase("ru")
-          && place.form[0] !== place.form[0].toLocaleLowerCase("ru")){
-        replacement = replacement[0].toLocaleUpperCase("ru") + replacement.slice(1);
-      }
-      text = text.slice(0, place.start) + replacement + text.slice(place.end);
+    if (!group.checked) continue;
+    let replacement = batch.replacement;
+    if (group.form[0] === group.form[0].toLocaleUpperCase("ru")
+        && group.form[0] !== group.form[0].toLocaleLowerCase("ru")){
+      replacement = replacement[0].toLocaleUpperCase("ru") + replacement.slice(1);
     }
-    void sendEdit(revision => appCall("interview_retext", revision, turn.id, text));
+    for (const place of group.places){
+      replacements.push([place.span, place.before + replacement + place.after]);
+    }
   }
-  await EDITS;
-
-  PROOF.batch = null;
-  PROOF.emailError = "";
-  // The flags of the changed turns are gone — ask the check for new ones.
-  void runProofreading();
+  if (!replacements.length) return;
+  await EDITS;   // what was being typed is saved first
+  const reply = await sendEdit(
+    revision => appCall("interview_replace", revision, replacements));
+  if (reply.ok){
+    PROOF.batch = null;
+    PROOF.emailError = "";
+  }
+  keepingScroll(renderProof);
 }
 
 /* The same text, but with a map: where each turn begins and ends in it.
@@ -4948,22 +4813,7 @@ function rerenderForLanguage(){
    drafts and decisions stay as they were (runProofreading would reset them). */
 async function refreshProofMessages(){
   if (!PROOF.turns.length || PROOF.loading || PROOF.dirty) return;
-  try {
-    const response = await localFetch("/proofread", {
-      method:"POST",
-      headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({turns:PROOF.turns, notes:PROOF.notes, guide:PROOF.guide})
-    });
-    const payload = await response.json();
-    if (!response.ok || payload.error) return;
-    const messages = new Map((payload.issues || []).map(issue => [issue.id, issue.message]));
-    for (const issue of PROOF.issues){
-      if (messages.has(issue.id)) issue.message = messages.get(issue.id);
-    }
-    renderProofIssues();
-  } catch (_error) {
-    // The old wording stays; the next check brings the new one.
-  }
+  await runProofreading(true);
   if (COVERAGE.report) void runCoverage();
 }
 

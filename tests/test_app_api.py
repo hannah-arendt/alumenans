@@ -230,6 +230,27 @@ class AppApiTests(unittest.TestCase):
             ["Как вас зовут?", "Меня зовут", "Анна Петровна."],
         )
 
+    def test_the_checks_run_on_the_transcript_the_application_holds(self):
+        self.addCleanup(self.api._close_interview)
+        self.assertFalse(self.api.interview_check()["ok"])  # nothing is open
+        result = transcription((1, "Где вы были?"), (2, "Я ходила в магазин, потом домой."))
+        result["turns"][1]["words"][3]["confidence"] = 0.2
+        self.transcriber.result = result
+        self.api.interview_create()
+
+        found = self.api.interview_check("Guide.", "Notes.")
+        self.assertTrue(found["ok"], found)
+        self.assertEqual(found["revision"], 0)
+        self.assertEqual([(flag["kind"], flag["span"], flag["text"]) for flag in found["flags"]],
+                         [("hearing", [7, 7], "магазин")])
+        # The guide and notes the check used are the ones that are saved.
+        self.assertEqual(self.api.interview_load()["state"]["guide"], "Guide.")
+
+        replaced = self.api.interview_replace(0, [[[7, 7], "универмаг,"]])
+        self.assertTrue(replaced["ok"], replaced)
+        after = self.api.interview_check("Guide.", "Notes.")
+        self.assertEqual((after["revision"], after["flags"]), (1, []))
+
     def test_choosing_another_recording_closes_the_interview(self):
         self.transcriber.result = transcription((1, "Как вас зовут?"))
         self.api.interview_create()

@@ -17,7 +17,7 @@ from alumenans.document.transcript import from_machine_turns
 from alumenans.interview_name import group_parts, parse_interview_name, study_title_from
 from alumenans.open_interview import OpenInterview, StaleRevision
 from alumenans.paths import state_file
-from alumenans.proofreading import clean, set_study_words
+from alumenans.proofreading import check, clean, set_study_words
 from alumenans.storage import cipher
 from alumenans.storage.cipher import StudySecret
 from alumenans.storage.exchange import (
@@ -353,6 +353,16 @@ class AppApi:
             lambda interview: interview.split(revision, turn_id, str(before), str(after))
         )
 
+    def interview_replace(self, revision, replacements):
+        """Each replacement is a span, as its first and last word, and the
+        text to put in its place. All of them are one step."""
+
+        return self._edit(
+            lambda interview: interview.replace(
+                revision, [((first, last), str(text)) for (first, last), text in replacements]
+            )
+        )
+
     def interview_merge(self, revision, turn_id):
         return self._edit(lambda interview: interview.merge(revision, turn_id))
 
@@ -366,6 +376,27 @@ class AppApi:
 
     def interview_redo(self):
         return self._edit(lambda interview: interview.redo())
+
+    def interview_check(self, guide="", notes=""):
+        """Runs the proofreading checks on the transcript as it stands, with
+        the guide and notes the person has written, which are saved too. The
+        reply names the revision that was checked: the window may have moved
+        on while the checks ran."""
+
+        with self._interview_lock:
+            interview = self._interview
+            if interview is None:
+                return {"ok": False, "error": t("api.no_project")}
+            try:
+                self._interview_store.save_context(str(guide or ""), str(notes or ""))
+            except Exception as error:
+                return _failed(error)
+        transcript = interview.transcript
+        try:
+            found = check(transcript, str(notes or ""), str(guide or ""))
+        except Exception as error:
+            return _failed(error)
+        return {"ok": True, "revision": transcript.revision, **found}
 
     def interview_mark_anonymized(self, left=0, turns=None):
         """Records that anonymization was carried through, with the

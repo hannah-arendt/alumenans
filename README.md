@@ -264,7 +264,7 @@ in installed builds, add a check there.
 │        │ window.pywebview.api         │ fetch() to 127.0.0.1                     │
 │        ▼                              ▼                                          │
 │     AppApi (stateful)           Handler on ThreadingHTTPServer (stateless)       │
-│     media, jobs, projects,      /analyze /proofread /inflect /known-words        │
+│     media, jobs, projects,      /analyze /inflect /known-words                   │
 │     study, export               /guide-report /warmup /health, audio ranges      │
 │        │                              │                                          │
 │        │                              └─▶ anonymization: GLiNER, Natasha,        │

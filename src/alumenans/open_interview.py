@@ -23,7 +23,14 @@ from alumenans.document.editing import (
     SplitTurn,
     apply,
 )
-from alumenans.document.transcript import Span, Transcript, Turn, TurnId, changed_turns
+from alumenans.document.transcript import (
+    Span,
+    Transcript,
+    Turn,
+    TurnId,
+    changed_turns,
+    letters,
+)
 from alumenans.storage.interview_store import InterviewStore
 
 
@@ -83,7 +90,18 @@ class OpenInterview:
         def edit(transcript: Transcript) -> Transcript:
             for span, text in replacements:
                 turn, first, count = _span_in_turn(transcript, span)
-                change = ReplaceWords(turn.id, first, count, tuple(text.split()))
+                texts = text.split()
+                if texts and not any(letters(word) for word in texts):
+                    # Only punctuation is left of the words, a comma say. It
+                    # goes to the word in front; at the start of a turn it
+                    # has nothing to belong to.
+                    if first == 0:
+                        texts = []
+                    else:
+                        first -= 1
+                        count += 1
+                        texts = [turn.words[first].text + "".join(texts)]
+                change = ReplaceWords(turn.id, first, count, tuple(texts))
                 transcript, _ = apply(transcript, change)
             return transcript
 

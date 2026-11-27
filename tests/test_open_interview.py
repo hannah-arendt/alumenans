@@ -191,6 +191,16 @@ class OpenInterviewTests(unittest.TestCase):
         self.assertEqual(self.texts()[0], (1, "Привет, как дела?"))
         self.assertEqual(self.texts()[2], (1, "Тоже неплохо, спасибо."))
 
+    def test_a_replacement_that_leaves_only_punctuation_gives_it_to_the_word_before(self):
+        interview = self.open()
+        interview.replace(0, [((2, 2), ","), ((8, 8), "…"), ((5, 6), "")])
+        self.assertEqual(
+            self.texts(), [(1, "Привет,, дела?"), (2, "Хорошо. тебя?"), (1, "неплохо, спасибо.")]
+        )
+        self.assert_saved()
+        interview.undo()
+        self.assertEqual(self.texts()[0], (1, "Привет, как дела?"))
+
     # -- undo and redo -----------------------------------------------------------
 
     def test_undo_and_redo_restore_the_text_and_save_it(self):

@@ -66,7 +66,7 @@ class WorkflowContractTests(unittest.TestCase):
             "`/audio?v=${encodeURIComponent(PLAYER.token)}&part=${index}&session=${encodeURIComponent(SESSION)}`", HTML
         )
         # A word carries both its own time and the boundaries of its phrase.
-        self.assertIn('data-ps="${phrase.start.toFixed(2)}"', HTML)
+        self.assertIn('data-ps="${phraseOf[index].start.toFixed(2)}"', HTML)
         self.assertIn('data-proof-action="listen"', HTML)
 
     def test_the_player_spans_all_parts_of_one_interview(self):
@@ -255,6 +255,17 @@ class WorkflowContractTests(unittest.TestCase):
             self.assertIn(call, HTML)
         # The window keeps no history and no word timings of its own.
         for removed in ("const HISTORY", "reflowTurnWords", "normalizeTurns", "carryAnonymizationIntoProof"):
+            self.assertNotIn(removed, HTML)
+
+    def test_flags_come_from_the_application_and_sit_on_words(self):
+        self.assertIn('appCall("interview_check", PROOF.guide, PROOF.notes)', HTML)
+        self.assertIn('appCall("interview_replace", revision, [[issue.span, text]])', HTML)
+        self.assertIn('appCall("interview_replace", revision, replacements)', HTML)
+        # Every edit is followed by a check, and a dismissed flag stays dismissed.
+        self.assertIn("takeTranscript(reply);\n        scheduleCheck();", HTML)
+        self.assertIn("found.flags.filter(flag => !PROOF.dismissed.has(flag.id))", HTML)
+        # The window no longer cuts text into words or asks over HTTP.
+        for removed in ("PROOF_WORD_PATTERN", "/proofread", "issue.start"):
             self.assertNotIn(removed, HTML)
 
     def test_enter_and_backspace_split_and_join_turns(self):

@@ -20,7 +20,6 @@ from alumenans.i18n import t
 from alumenans.introduction import respondent_speaker
 from alumenans.paths import RESOURCES
 from alumenans.places import KINDS as PLACE_KINDS
-from alumenans.proofreading import analyze_proofreading
 
 SCREEN = RESOURCES / "anonymizer.html"
 
@@ -302,31 +301,6 @@ class Handler(BaseHTTPRequestHandler):
                 )
                 return
             self._send(200, json.dumps(report, ensure_ascii=False))
-            return
-
-        if self.path == "/proofread":
-            length = int(self.headers.get("Content-Length") or 0)
-            if length > LIMIT:
-                self._send(413, json.dumps({"error": t("http.transcript_too_large")}))
-                return
-            try:
-                request = json.loads(self.rfile.read(length).decode("utf-8"))
-                result = analyze_proofreading(
-                    request.get("turns") or [],
-                    request.get("notes") or "",
-                    request.get("guide") or "",
-                )
-            except Exception as error:
-                log.exception("%s failed", self.path)
-                self._send(
-                    500,
-                    json.dumps(
-                        {"error": str(error)[:600] or type(error).__name__},
-                        ensure_ascii=False,
-                    ),
-                )
-                return
-            self._send(200, json.dumps(result, ensure_ascii=False))
             return
 
         if self.path != "/analyze":

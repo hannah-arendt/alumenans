@@ -340,7 +340,16 @@ class CheckTests(unittest.TestCase):
         flag = flags[0]
         self.assertEqual(flag["span"], [7, 7])
         self.assertEqual([word.text for word in span_words(transcript, tuple(flag["span"]))], ["магазин,"])
-        self.assertEqual(set(flag), {"id", "kind", "span", "message", "suggestion"})
+        self.assertEqual(set(flag), {"id", "kind", "span", "text", "message", "suggestion"})
+        self.assertEqual(flag["text"], "магазин")
+
+    def test_a_flag_is_recognised_again_until_its_words_change(self):
+        transcript = self.transcript()
+        first = check(transcript)["flags"][0]["id"]
+        elsewhere, _ = retext(transcript, 1, "А где вы были вчера?")
+        nearby, _ = retext(transcript, 2, "Я потом ходила в магазин, потом домой.")
+        self.assertEqual(check(elsewhere)["flags"][0]["id"], first)
+        self.assertEqual(check(nearby)["flags"][0]["id"], first)
 
     def test_a_flag_follows_its_word_when_the_turn_is_edited(self):
         edited, _ = retext(self.transcript(), 2, "Я потом ходила в магазин, потом домой.")

@@ -1652,9 +1652,12 @@ def clean(transcript: Transcript) -> Transcript:
 def check(transcript: Transcript, notes: str = "", guide: str = "") -> dict:
     """What a proofreader should look at.
 
-    `flags`: each with the span of words it is about. A check may point at
-    part of a word, such as a word without its comma; the flag is on the
-    whole word. `topics`: the turns where a new topic seems to begin."""
+    `flags`: each with the span of words it is about and the `text` the
+    check pointed at. That text may be part of a word, such as a word
+    without its comma; the flag is on the whole word. A flag's `id` stays
+    the same while its words and its text do, so the same finding can be
+    recognised after other words were edited. `topics`: the turns where a
+    new topic seems to begin."""
 
     found = analyze_proofreading(
         [
@@ -1685,11 +1688,14 @@ def check(transcript: Transcript, notes: str = "", guide: str = "") -> dict:
         first, count = words_in_range(turn, issue["start"], issue["end"])
         if not count:
             continue
+        span = [turn.words[first].id, turn.words[first + count - 1].id]
+        text = hashlib.sha1(issue["text"].encode("utf-8")).hexdigest()[:8]
         flags.append(
             {
-                "id": issue["id"],
+                "id": f"{issue['kind']}-{span[0]}-{span[1]}-{text}",
                 "kind": issue["kind"],
-                "span": [turn.words[first].id, turn.words[first + count - 1].id],
+                "span": span,
+                "text": issue["text"],
                 "message": issue["message"],
                 "suggestion": issue["suggestion"],
             }
