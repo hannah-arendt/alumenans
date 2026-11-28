@@ -6,8 +6,8 @@ from __future__ import annotations
 
 import copy
 import json
+import logging
 import math
-import os
 import subprocess
 import sys
 import tempfile
@@ -67,6 +67,9 @@ def worker_python() -> Path:
         if console.is_file():
             return console
     return executable
+
+
+log = logging.getLogger(__name__)
 
 
 class TranscriptionManager:
@@ -266,6 +269,7 @@ class TranscriptionManager:
         def remember(raw_line: str) -> None:
             line = raw_line.strip()
             if line:
+                log.info("worker: %s", line)
                 with noise_lock:
                     noise.append(line)
                     del noise[:-8]

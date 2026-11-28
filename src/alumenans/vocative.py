@@ -28,7 +28,7 @@ human needs wider context.
 from __future__ import annotations
 
 import re
-from typing import Callable, Iterable
+from typing import Callable
 
 
 __all__ = ["vocative_spans", "full_forms"]

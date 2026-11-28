@@ -47,9 +47,6 @@ KINDS_RU = (
     ("minutes", r"конспект|протокол|встреч|созвон|планёрк|планерк"),
 )
 
-NOTES_RE = re.compile(r"заметк|наблюдени|после интервью|пометк", re.IGNORECASE)
-
-
 def is_our_own_output(name: str) -> bool:
     """Transcripts, keys and word lists do not count as documents."""
 

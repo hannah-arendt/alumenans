@@ -62,7 +62,7 @@ class BuildTests(unittest.TestCase):
             "__main__.py",
             "app.py",
             "transcription/worker.py",
-            "resources/anonymizer.html",
+            "resources/app.html",
             "resources/names-and-organizations.txt",
         ):
             with self.subTest(wanted=wanted):

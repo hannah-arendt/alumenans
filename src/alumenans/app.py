@@ -40,6 +40,7 @@ from alumenans.launch import (
     signal_setup_window_close,
     start_setup_window_process,
 )
+from alumenans import logs
 from alumenans.server import (
     Handler,
     SCREEN,
@@ -111,6 +112,7 @@ def show_error(message):
 
 
 def main():
+    logs.configure()
     # Before anything that opens a window or downloads models: CI runs this
     # on the installed program (see self_test.py).
     if len(sys.argv) > 1 and sys.argv[1] == SELF_TEST_ARG:

@@ -10,7 +10,7 @@ from alumenans.paths import PACKAGE_DIR
 RU = screen_catalogs()["ru"]
 
 
-HTML = PACKAGE_DIR.joinpath("resources", "anonymizer.html").read_text(
+HTML = PACKAGE_DIR.joinpath("resources", "app.html").read_text(
     encoding="utf-8"
 )
 # The page's wording lives in its catalog script; checks of wording look at both.
@@ -66,7 +66,7 @@ class WorkflowContractTests(unittest.TestCase):
             "`/audio?v=${encodeURIComponent(PLAYER.token)}&part=${index}&session=${encodeURIComponent(SESSION)}`", HTML
         )
         # A word carries both its own time and the boundaries of its phrase.
-        self.assertIn('data-ps="${phrase.start.toFixed(2)}"', HTML)
+        self.assertIn('data-ps="${phraseOf[index].start.toFixed(2)}"', HTML)
         self.assertIn('data-proof-action="listen"', HTML)
 
     def test_the_player_spans_all_parts_of_one_interview(self):
@@ -106,7 +106,7 @@ class WorkflowContractTests(unittest.TestCase):
 
     def test_sound_is_started_only_by_buttons(self):
         # The word is highlighted but doesn't start the audio by itself.
-        self.assertIn('data-listen-turn="${index}"', HTML)
+        self.assertIn("data-listen-turn", HTML)
         self.assertIn('data-proof-action="listen"', HTML)
         self.assertNotIn("playAtWord", HTML)
 
@@ -158,100 +158,6 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertIn('localFetch("/known-words"', HTML)
         self.assertIn("есть в словаре русского языка", UI)
 
-    def test_word_can_be_deleted_not_only_replaced(self):
-        self.assertIn('data-proof-action="delete"', HTML)
-        self.assertIn('replaceProofIssue(issue, "");', HTML)
-        # An empty replacement is a seam, not just cut-out characters.
-        self.assertIn("function healSeam(text, at)", HTML)
-        self.assertIn("toLocaleUpperCase(\"ru\")", HTML)
-        # We listen to the whole turn; its boundaries don't change with an edit,
-        # so the word timings must be edited, not thrown away.
-        self.assertIn("function reflowTurnWords(turn, start, end, replacement)", HTML)
-        # A free edit can no longer break the link: it is simply
-        # not accepted if the number of words changed.
-        self.assertEqual(HTML.count("turn.words = [];"), 0)
-
-    def test_manual_edit_keeps_the_link_between_letters_and_sound(self):
-        # An edit via selection goes the same way as the program's replacements,
-        # so the new piece gets the old one's time.
-        self.assertIn("function selectionInsideTurn()", HTML)
-        self.assertIn("function applyManualEdit(replacement)", HTML)
-        self.assertIn("reflowTurnWords(turn, start, end, replacement);", HTML)
-        self.assertIn('addEventListener("contextmenu"', HTML)
-        self.assertIn('data-manual-action="apply"', HTML)
-        # Button order: the ordinary edit first, changing the speaker last.
-        self.assertLess(
-            HTML.index('data-manual-action="apply"'),
-            HTML.index('data-manual-action="speaker"'),
-        )
-
-    def test_free_editing_cannot_change_the_number_of_words(self):
-        # Otherwise the text's words and the recording's words drift apart, and the turn
-        # stops playing. The edit is rejected rather than silently accepted.
-        self.assertIn(
-            "if (countWords(text) !== countWords(turn.text)){\n"
-            "    element.textContent = turn.text;",
-            HTML,
-        )
-        self.assertIn('id="proofEditHint"', HTML)
-        self.assertIn("кликните по нему правой кнопкой мыши", UI)
-        self.assertEqual(HTML.count("turn.words = [];"), 0)
-
-    def test_speaker_attribution_is_fixed_through_the_selection(self):
-        # There are no separate controls: both splitting and changing the speaker
-        # are done by selecting a piece and right-clicking.
-        self.assertIn("function moveSelectionToSpeaker(spot, speaker)", HTML)
-        self.assertIn('data-manual-action="speaker"', HTML)
-        self.assertIn("Реплика другого спикера", UI)
-        self.assertNotIn("data-speaker-for", HTML)
-        self.assertNotIn("data-merge-turn", HTML)
-
-    def test_two_turns_of_one_speaker_become_one(self):
-        # A merge button isn't needed: merging happens by itself once the reason
-        # to keep them apart is gone.
-        self.assertIn("function normalizeTurns()", HTML)
-        self.assertNotIn("function mergeWithPrevious", HTML)
-
-    def test_speaker_count_is_fixed_at_transcription(self):
-        self.assertIn("function speakerCount()", HTML)
-        self.assertIn("requested_speakers", HTML)
-        # With two participants there is nothing to choose from.
-        self.assertIn("function otherSpeaker(current)", HTML)
-
-    def test_editing_can_be_undone(self):
-        self.assertIn("const HISTORY = {past:[], future:[], limit:10};", HTML)
-        self.assertIn("function undoProof()", HTML)
-        self.assertIn("function redoProof()", HTML)
-        # The snapshot is taken before the change, not after.
-        self.assertGreaterEqual(HTML.count("remember();"), 6)
-
-    def test_hint_sits_under_the_player_and_goes_away(self):
-        # The exact wording of the hint is checked separately,
-        # in test_proof_hint_and_undo.py.
-        self.assertIn('id="proofEditHint"', HTML)
-        self.assertIn("В этом окне можно вносить только мелкие правки", UI)
-        self.assertIn("function dismissEditHint()", HTML)
-        self.assertIn("setTimeout(dismissEditHint, 60000)", HTML)
-        hint = HTML.split(".proof-edit-hint{")[1].split("}")[0]
-        self.assertIn("font:16.5px/1.6 var(--serif)", hint)
-
-    def test_split_and_merge_keep_the_words_of_the_recording(self):
-        # A turn is split together with its words, otherwise both halves
-        # would lose their link to the audio.
-        split = HTML.split("function splitTurn(index, offset)")[1].split(
-            "function mergeWithPrevious"
-        )[0]
-        self.assertIn("const flat = expandTurnWords(turn);", split)
-        self.assertIn("words: after", split)
-        self.assertIn("turn.words = before;", split)
-        merge = HTML.split("function normalizeTurns()")[1].split("\n}")[0]
-        self.assertIn(
-            "previous.words = [...expandTurnWords(previous), ...expandTurnWords(turn)];",
-            merge,
-        )
-        # After the number of turns changes, the old remarks point to the wrong places.
-        self.assertIn("void runProofreading();", HTML)
-
     def test_two_hyphens_become_a_dash_while_typing(self):
         self.assertIn("function fixDashes(text)", HTML)
         self.assertIn('replace(/(^|[^-])--(?!-)/g, "$1—")', HTML)
@@ -264,10 +170,8 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertNotIn('id="proofGuide"', HTML)
         self.assertNotIn('id="proofNotes"', HTML)
         rail = HTML.split('<div class="proof-rail-scroll">')[1].split("</aside>")[0]
-        self.assertIn('data-i18n="proof.coverage"', rail)
         self.assertIn('data-i18n="proof.topics"', rail)
         self.assertNotIn('data-i18n="notes.label"', rail)
-        self.assertEqual(RU["proof.coverage"], "Покрытие гайда")
         self.assertEqual(RU["proof.topics"], "Таймкоды тем")
 
     def test_first_screen_has_no_decorative_rules(self):
@@ -277,17 +181,6 @@ class WorkflowContractTests(unittest.TestCase):
         # Guide, programme and notes stand in one row, not one below another.
         self.assertIn('<div class="interview-context-row">', HTML)
         self.assertIn("grid-template-columns:repeat(3, minmax(0, 1fr))", HTML)
-
-    def test_guide_coverage_is_shown_in_the_rail(self):
-        self.assertIn('id="proofCoveragePanel"', HTML)
-        self.assertIn('localFetch("/guide-report"', HTML)
-        # The report is recomputed after every text check.
-        self.assertIn("void runCoverage();", HTML)
-        # The states of findings are distinguishable, not lumped into "yes / no".
-        for state in ("вероятно", "вместе с соседним", "не по порядку"):
-            self.assertIn(state, HTML)
-        # A question that wasn't found leads nowhere.
-        self.assertIn('${clickable ? "" : "flat"}', HTML)
 
     def test_every_request_to_the_local_server_carries_the_session(self):
         # The server refuses anything without this launch's secret.
@@ -337,15 +230,45 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertIn("function fixQuotes(text)", HTML)
         self.assertIn("fixQuotes(fixDashes(", HTML)
 
+    def test_every_edit_of_the_transcript_is_made_by_the_application(self):
+        for call in (
+            'appCall("interview_retext", revision, turn.id, text, continues)',
+            'appCall("interview_split", revision, turn.id, before, after)',
+            'appCall("interview_merge", revision, second.id)',
+            'appCall("interview_set_speaker", revision, turn.id, Number(choice.value))',
+            'appCall("interview_undo")',
+            'appCall("interview_redo")',
+        ):
+            self.assertIn(call, HTML)
+        # The window keeps no history and no word timings of its own.
+        for removed in ("const HISTORY", "reflowTurnWords", "normalizeTurns", "carryAnonymizationIntoProof"):
+            self.assertNotIn(removed, HTML)
+
+    def test_flags_come_from_the_application_and_sit_on_words(self):
+        self.assertIn('appCall("interview_check", PROOF.guide, PROOF.notes)', HTML)
+        self.assertIn('appCall("interview_replace", revision, [[issue.span, text]])', HTML)
+        self.assertIn('appCall("interview_replace", revision, replacements)', HTML)
+        # Every edit is followed by a check, and a dismissed flag stays dismissed.
+        self.assertIn("takeTranscript(reply);\n        scheduleCheck();", HTML)
+        self.assertIn("found.flags.filter(flag => !PROOF.dismissed.has(flag.id))", HTML)
+        # The window no longer cuts text into words or asks over HTTP.
+        for removed in ("PROOF_WORD_PATTERN", "/proofread", "issue.start"):
+            self.assertNotIn(removed, HTML)
+
+    def test_enter_and_backspace_split_and_join_turns(self):
+        self.assertIn('if (event.key === "Enter"){\n    event.preventDefault();\n    splitTurnAtCaret(editor);', HTML)
+        self.assertIn('if (event.key === "Backspace" && offset === 0 && index > 0){', HTML)
+        self.assertIn("if (first.speaker !== second.speaker){", HTML)
+
     def test_typing_inside_a_turn_is_undone_by_the_browser(self):
         # Otherwise the program swallows Ctrl+Z and gives nothing in return:
         # it keeps its own history by whole actions, not by letters.
         self.assertIn('closest(".proof-turn-text")', HTML)
         self.assertIn("if (inTextField) return;", HTML)
-        self.assertIn("if (isUndo && !HISTORY.past.length) return;", HTML)
+        self.assertIn("if (isUndo && !PROOF.canUndo) return;", HTML)
 
     def test_a_turn_has_both_play_and_pause(self):
-        self.assertIn('data-listen-turn="${index}"', HTML)
+        self.assertIn("data-listen-turn", HTML)
         self.assertIn('data-pause-turn="1"', HTML)
         self.assertIn(".proof-turn-sound{", HTML)
 
@@ -368,7 +291,7 @@ class WorkflowContractTests(unittest.TestCase):
         # the person, that has to remember this.
         self.assertIn("function markAnonymizationDone()", HTML)
         self.assertIn(
-            'appCall("project_mark_anonymized", pendingEntities(), anonymisedTurns())',
+            'appCall("interview_mark_anonymized", pendingEntities(), anonymisedTurns())',
             HTML,
         )
         self.assertIn("function pendingEntities()", HTML)
@@ -381,17 +304,6 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertIn("byMention.get(`${e.start}:${e.end}`)", HTML)
         # Our own crude grouping remains: the html is also opened without the program.
         self.assertIn("groupKey(e)", HTML)
-
-    def test_missing_word_is_written_into_the_gap(self):
-        # Recognition sometimes loses a word entirely. A selected space is
-        # an edit like any other, and goes the same way.
-        self.assertIn("gap: !text.trim()", HTML)
-        self.assertIn("Пропущенное слово", UI)
-        # The typed-in word goes between its neighbours, not in place of the space.
-        self.assertIn("replacement = `${edit.text}${String(replacement).trim()}${edit.text}`;", HTML)
-        # And gets its own time: otherwise the highlighting goes off during playback.
-        self.assertIn("if (!span && added){", HTML)
-        self.assertIn("let span = cut.length", HTML)
 
     def test_listening_to_a_turn_is_an_icon_not_a_caption(self):
         # The button is on every turn; a label repeated twenty times
@@ -413,7 +325,7 @@ class WorkflowContractTests(unittest.TestCase):
         # Audio is a consumable: it is deleted once the interview is processed, and
         # the interview must stay in the series list and open without it.
         self.assertIn("function describeRecording(recording)", HTML)
-        self.assertIn('appCall("project_open", recording.project)', HTML)
+        self.assertIn('appCall("interview_open", recording.project)', HTML)
         self.assertIn("if (!recording.audio){", HTML)
         self.assertIn('"аудиофайла нет"', UI)
         # Work continues from proofreading rather than starting over.
@@ -431,12 +343,11 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertIn("if (state.raw) await askModel();", HTML)
 
     def test_work_is_written_to_the_project_file(self):
-        self.assertIn('appCall(\n      "project_save_transcript"', HTML)
-        self.assertIn('"project_save_turns"', HTML)
-        self.assertIn('appCall("project_load")', HTML)
+        self.assertIn('appCall(\n      "interview_create"', HTML)
+        self.assertIn('appCall("interview_save_context", PROOF.guide, PROOF.notes)', HTML)
+        self.assertIn('appCall("interview_load")', HTML)
         self.assertIn('id="btnResumeProject"', HTML)
-        # Autosave is called after every proofreading decision.
-        self.assertIn("scheduleProjectSave();", HTML)
+        self.assertIn('appCall("interview_set_topic", turn.id, turn.topic_start, turn.topic_title || "")', HTML)
 
     def test_new_words_go_to_the_study_dictionary_first(self):
         # A word gets into the program's shared dictionary in a new version, and only

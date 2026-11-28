@@ -444,30 +444,26 @@ def stage_transcript(case: Case, transcript: dict) -> dict:
 
 
 def stage_proofreading(case: Case, transcript: dict) -> dict:
-    from alumenans.proofreading import analyze_proofreading
+    from alumenans.proofreading import analyze_proofreading, normalize_transcript_text
 
     _reset_shared_state(case)
-    return analyze_proofreading(transcript["turns"], case.notes, case.guide)
+    # The analysis expects text that has been through cleanup, as the app
+    # gives it.
+    turns = [
+        dict(turn, text=normalize_transcript_text(turn.get("text") or "")[0])
+        for turn in transcript["turns"]
+    ]
+    return analyze_proofreading(turns, case.notes, case.guide)
 
 
 def stage_detection(case: Case, transcript: dict) -> dict:
     return detect(case, transcript["turns"])
 
 
-def stage_guide(case: Case, transcript: dict) -> dict:
-    from alumenans.guide.report import build_report
-
-    guide = case.guide.strip()
-    if not guide:
-        raise StageUnavailable(f"{case.name}: the case has no guide.")
-    return build_report(guide, transcript["turns"])
-
-
 STAGES = {
     "transcript": stage_transcript,
     "proofreading": stage_proofreading,
     "detection": stage_detection,
-    "guide": stage_guide,
 }
 
 

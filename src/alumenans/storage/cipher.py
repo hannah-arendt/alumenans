@@ -141,7 +141,10 @@ def connect(
     exists = target.is_file() and target.stat().st_size > 0
     if exists and read_salt(target) != secret.salt:
         raise OtherStudy()
-    connection = sqlite3.connect(str(target), timeout=timeout)
+    # The window calls the application on a new thread each time, so a store
+    # is opened on one thread and used on others. The stores' owner lets one
+    # call in at a time.
+    connection = sqlite3.connect(str(target), timeout=timeout, check_same_thread=False)
     try:
         # A wrong key is an ordinary event here; SQLCipher would otherwise
         # write its own error lines to stderr.

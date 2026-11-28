@@ -3,6 +3,7 @@
 Listens on 127.0.0.1 only and answers only the program's own window."""
 
 import json
+import logging
 import re
 import secrets
 import socket
@@ -19,9 +20,8 @@ from alumenans.i18n import t
 from alumenans.introduction import respondent_speaker
 from alumenans.paths import RESOURCES
 from alumenans.places import KINDS as PLACE_KINDS
-from alumenans.proofreading import analyze_proofreading
 
-SCREEN = RESOURCES / "anonymizer.html"
+SCREEN = RESOURCES / "app.html"
 
 
 I18N_SCRIPT = RESOURCES / "i18n.js"
@@ -29,6 +29,8 @@ I18N_SCRIPT = RESOURCES / "i18n.js"
 
 LOGO = RESOURCES / "ALumenans_logo.png"
 
+
+log = logging.getLogger(__name__)
 
 LIMIT = 32 * 1024 * 1024  # a sensible ceiling on the size of a transcript
 
@@ -224,12 +226,27 @@ class Handler(BaseHTTPRequestHandler):
             self._send(202, json.dumps({"model": dict(MODEL_STATE)}))
             return
 
+        if self.path == "/page-error":
+            # Whatever went wrong in the window: its own errors, and replies
+            # from the program that said "failed". The window has no console
+            # of its own to show them in.
+            length = min(int(self.headers.get("Content-Length") or 0), LIMIT)
+            try:
+                report = json.loads(self.rfile.read(length).decode("utf-8"))
+                level = logging.WARNING if report.get("level") == "warning" else logging.ERROR
+                log.log(level, "window: %s", str(report.get("message") or "")[:4000])
+            except Exception:
+                log.exception("%s failed", self.path)
+            self._send(204, "")
+            return
+
         if self.path == "/inflect":
             length = int(self.headers.get("Content-Length") or 0)
             try:
                 request = json.loads(self.rfile.read(length).decode("utf-8"))
                 word = inflect_word(request.get("phrase") or "", request.get("gram") or {})
             except Exception:
+                log.exception("%s failed", self.path)
                 word = (request.get("phrase") if isinstance(request, dict) else "") or ""
             self._send(200, json.dumps({"phrase": word}, ensure_ascii=False))
             return
@@ -251,61 +268,9 @@ class Handler(BaseHTTPRequestHandler):
                     if isinstance(word, (str, int))
                 }
             except Exception:
+                log.exception("%s failed", self.path)
                 known = {}
             self._send(200, json.dumps({"known": known}, ensure_ascii=False))
-            return
-
-        if self.path == "/guide-report":
-            # The guide knows the order of the conversation. Alignment turns
-            # that knowledge into an answer to the question "which of the
-            # planned topics actually came up".
-            length = int(self.headers.get("Content-Length") or 0)
-            if length > LIMIT:
-                self._send(413, json.dumps({"error": t("http.transcript_too_large")}))
-                return
-            try:
-                from alumenans.guide.report import build_report
-
-                request = json.loads(self.rfile.read(length).decode("utf-8"))
-                guide_text = str(request.get("guide") or "").strip()
-                if not guide_text:
-                    self._send(200, json.dumps({"empty": True}, ensure_ascii=False))
-                    return
-                report = build_report(guide_text, request.get("turns") or [])
-            except Exception as error:
-                self._send(
-                    500,
-                    json.dumps(
-                        {"error": str(error)[:600] or type(error).__name__},
-                        ensure_ascii=False,
-                    ),
-                )
-                return
-            self._send(200, json.dumps(report, ensure_ascii=False))
-            return
-
-        if self.path == "/proofread":
-            length = int(self.headers.get("Content-Length") or 0)
-            if length > LIMIT:
-                self._send(413, json.dumps({"error": t("http.transcript_too_large")}))
-                return
-            try:
-                request = json.loads(self.rfile.read(length).decode("utf-8"))
-                result = analyze_proofreading(
-                    request.get("turns") or [],
-                    request.get("notes") or "",
-                    request.get("guide") or "",
-                )
-            except Exception as error:
-                self._send(
-                    500,
-                    json.dumps(
-                        {"error": str(error)[:600] or type(error).__name__},
-                        ensure_ascii=False,
-                    ),
-                )
-                return
-            self._send(200, json.dumps(result, ensure_ascii=False))
             return
 
         if self.path != "/analyze":
@@ -321,6 +286,7 @@ class Handler(BaseHTTPRequestHandler):
             request = json.loads(self.rfile.read(length).decode("utf-8"))
             text = request.get("text") or ""
         except Exception:
+            log.exception("%s failed", self.path)
             self._send(400, json.dumps({"error": t("http.bad_request")}))
             return
 
@@ -330,6 +296,7 @@ class Handler(BaseHTTPRequestHandler):
             # No Natasha — serve at least the dictionary findings.
             spans = dict_spans(text)
         except Exception as error:
+            log.exception("%s failed", self.path)
             self._send(500, json.dumps({"error": str(error)}))
             return
 

@@ -23,7 +23,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, Sequence
 
-from alumenans.i18n import t
 
 
 # The separator can be a hyphen or an underscore; spaces around them are
@@ -169,55 +168,3 @@ def study_title_from(paths: Sequence[str | Path]) -> str:
     codes.discard("")
     return next(iter(codes)) if len(codes) == 1 else ""
 
-
-def numbering_problems(paths: Sequence[str | Path]) -> list[str]:
-    """Remarks on the bookkeeping of the recordings in the folder.
-
-    A missing or duplicated number is a fieldwork bookkeeping error, and
-    it's only noticeable when you look at the whole folder at once."""
-
-    seen: dict[str, set[str]] = {}
-    for path in paths:
-        parsed = parse_interview_name(path)
-        if not parsed.recognised:
-            continue
-        seen.setdefault(parsed.number, set()).add(parsed.respondent.casefold())
-
-    problems = []
-
-    # The code in the name is mandatory: without it the interview can't be
-    # tied to a series or to an interviewer, and there's nothing to link
-    # the two parts of one recording by either.
-    unnamed = [
-        Path(str(path)).name
-        for path in paths
-        if not parse_interview_name(path).recognised
-    ]
-    if unnamed:
-        problems.append(
-            t("naming.bad_pattern", names=", ".join(sorted(unnamed)[:5]))
-            + (t("naming.and_more", count=len(unnamed) - 5) if len(unnamed) > 5 else "")
-        )
-
-    for number, names in sorted(seen.items()):
-        if len(names) > 1:
-            problems.append(
-                t("naming.duplicate_number", number=number, names=", ".join(sorted(names)))
-            )
-
-    digits = sorted(
-        int(re.sub(r"\D", "", number))
-        for number in seen
-        if re.search(r"\d", number)
-    )
-    if digits:
-        missing = [
-            value
-            for value in range(min(digits), max(digits) + 1)
-            if value not in digits
-        ]
-        if missing:
-            problems.append(
-                t("naming.missing_numbers", numbers=", ".join(str(value) for value in missing))
-            )
-    return problems

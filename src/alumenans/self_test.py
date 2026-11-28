@@ -54,7 +54,7 @@ def _check_imports() -> str:
 def _check_resources() -> str:
     from alumenans.paths import RESOURCES
 
-    for name in ("anonymizer.html", "i18n.js", "names-and-organizations.txt", "ALumenans_logo.ico"):
+    for name in ("app.html", "i18n.js", "names-and-organizations.txt", "ALumenans_logo.ico"):
         if not (RESOURCES / name).is_file():
             raise AssertionError(f"missing {RESOURCES / name}")
     return str(RESOURCES)

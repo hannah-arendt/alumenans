@@ -12,13 +12,11 @@ from alumenans.transcription.core import (
     TranscriptTurn,
     TranscriptionError,
     frames_to_spans,
-    mark_topic_starts,
     merge_speaker_spans,
     merge_transcript_turns,
     plan_asr_chunks,
     renumber_speakers,
     render_transcript,
-    resolve_overlaps,
     split_joined_utterance_words,
     timed_words_from_tokens,
     validate_media_path,
@@ -134,17 +132,6 @@ class DiarizationShapeTests(unittest.TestCase):
         ]
         self.assertEqual([span.speaker for span in renumber_speakers(spans)], [1, 2, 1])
 
-    def test_overlap_becomes_one_non_overlapping_timeline(self):
-        result = resolve_overlaps(
-            [
-                DiarizedSpan(0, 4, 0),
-                DiarizedSpan(3, 6, 1),
-            ]
-        )
-        self.assertTrue(result)
-        for previous, current in zip(result, result[1:]):
-            self.assertLessEqual(previous.end, current.start)
-
     def test_neighbouring_fragments_of_one_speaker_are_merged(self):
         result = merge_speaker_spans(
             [
@@ -226,6 +213,34 @@ class RecognitionWindowTests(unittest.TestCase):
             [(1, "Первый вопрос."), (2, "Ответ.")],
         )
 
+    def test_an_opening_dash_is_dropped_from_the_words_as_well_as_the_text(self):
+        turns = words_to_transcript_turns(
+            [
+                TimedWord(1, 2, "Вопрос?"),
+                TimedWord(2.1, 2.2, "—"),
+                TimedWord(2.2, 3, "Ответ"),
+                TimedWord(3.1, 3.2, "—"),
+                TimedWord(3.2, 4, "это"),
+                TimedWord(4.1, 5, "да."),
+                TimedWord(5.2, 5.3, "—"),
+                TimedWord(5.3, 6, "Угу."),
+                TimedWord(20, 21, "—Ясно."),
+            ],
+            [
+                DiarizedSpan(0, 2.05, 1),
+                DiarizedSpan(2.05, 15, 2),
+                DiarizedSpan(15, 25, 1),
+            ],
+        )
+
+        self.assertEqual(
+            [(turn.speaker, turn.text) for turn in turns],
+            [(1, "Вопрос?"), (2, "Ответ — это да. Угу."), (1, "Ясно.")],
+        )
+        for turn in turns:
+            self.assertEqual(turn.text, " ".join(word.text for word in turn.words))
+        self.assertEqual(turns[1].start, 2.2)
+
     def test_speaker_boundary_splits_a_phrase_at_the_matching_word(self):
         turns = words_to_transcript_turns(
             [
@@ -281,28 +296,6 @@ class TranscriptLogicTests(unittest.TestCase):
             TranscriptTurn(480, 490, 1, "Перейдём к вашему опыту переезда."),
             TranscriptTurn(490, 560, 2, "Я переехала сюда десять лет назад."),
         ]
-
-    def test_topic_markers_use_whole_minutes(self):
-        marked = mark_topic_starts(self.turns)
-        starts = [(turn.start, turn.topic_start) for turn in marked]
-        self.assertIn((180, True), starts)
-        self.assertIn((480, True), starts)
-        text = render_transcript(marked)
-        self.assertIn("[3 мин]", text)
-        self.assertIn("[8 мин]", text)
-        self.assertNotIn("[0 мин]", text)
-
-    def test_topic_change_can_be_started_by_any_speaker(self):
-        turns = [
-            TranscriptTurn(0, 20, 1, "Начало разговора."),
-            TranscriptTurn(130, 140, 2, "А теперь поговорим о работе."),
-            TranscriptTurn(190, 200, 1, "Следующий вопрос будет про переезд."),
-        ]
-        marked = mark_topic_starts(turns)
-        self.assertEqual(
-            [turn.start for turn in marked if turn.topic_start],
-            [130, 190],
-        )
 
     def test_adjacent_text_chunks_form_one_turn(self):
         result = merge_transcript_turns(

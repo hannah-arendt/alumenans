@@ -14,7 +14,6 @@ that the ear hears the same come out equal.
 from __future__ import annotations
 
 import re
-from difflib import SequenceMatcher
 from functools import lru_cache
 
 # Vowels are reduced to two series. Unstressed «о» and «а» sound the same

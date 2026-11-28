@@ -230,10 +230,6 @@ def parse_reference(text: str) -> Reference:
     return Reference(tuple(turns), closing)
 
 
-def load_reference(path: str | Path) -> Reference:
-    return parse_reference(Path(path).read_text(encoding="utf-8"))
-
-
 def load_hypothesis(path: str | Path) -> dict:
     """Reads the program's transcript: result.json or finished text.
 

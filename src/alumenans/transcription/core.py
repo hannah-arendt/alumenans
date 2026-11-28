@@ -566,8 +566,8 @@ def words_to_transcript_turns(
             phrase_speaker = speaker
 
         for speaker, group in groups:
+            group = _without_opening_dash(group)
             text = clean_recognized_text(" ".join(item.text for item in group))
-            text = re.sub(r"^—\s*", "", text)
             if not text:
                 continue
             if (
@@ -593,6 +593,20 @@ def words_to_transcript_turns(
                 )
             previous_speaker = speaker
     return turns
+
+
+def _without_opening_dash(words: list[TimedWord]) -> list[TimedWord]:
+    """The words without the dash the speech model puts where it hears a new
+    utterance begin. The turn already says who speaks, so the dash is dropped
+    from the words, and with them from the text."""
+
+    while words:
+        rest = words[0].text.lstrip()
+        if not rest.startswith("—"):
+            break
+        rest = rest[1:].lstrip()
+        words = ([replace(words[0], text=rest)] if rest else []) + words[1:]
+    return words
 
 
 # ---------------------------------------------------------------------------
@@ -693,47 +707,6 @@ def frames_to_spans(
     return _valid_spans(spans)
 
 
-def resolve_overlaps(spans: Iterable[DiarizedSpan]) -> list[DiarizedSpan]:
-    """Turns overlapping labels into a single chronological track.
-
-    A mono recording doesn't allow two simultaneous voices to be recognised
-    honestly. In a disputed interval the voice already speaking is kept;
-    this prevents the same phrase from being duplicated in two turns.
-    """
-
-    source = _valid_spans(spans)
-    if not source:
-        return []
-
-    boundaries = sorted({point for span in source for point in (span.start, span.end)})
-    pieces: list[DiarizedSpan] = []
-    previous_speaker: int | None = None
-
-    for start, end in zip(boundaries, boundaries[1:]):
-        if end - start < 0.02:
-            continue
-        middle = (start + end) / 2
-        active = [span for span in source if span.start <= middle < span.end]
-        if not active:
-            previous_speaker = None
-            continue
-
-        continuing = [span for span in active if span.speaker == previous_speaker]
-        chosen = continuing[0] if continuing else max(
-            active, key=lambda span: (span.end - span.start, -span.start)
-        )
-        piece = DiarizedSpan(start, end, chosen.speaker)
-        if pieces and pieces[-1].speaker == piece.speaker and math.isclose(
-            pieces[-1].end, piece.start, abs_tol=0.02
-        ):
-            pieces[-1] = DiarizedSpan(pieces[-1].start, piece.end, piece.speaker)
-        else:
-            pieces.append(piece)
-        previous_speaker = chosen.speaker
-
-    return pieces
-
-
 def renumber_speakers(spans: Iterable[DiarizedSpan]) -> list[DiarizedSpan]:
     """Numbers the voices from one in order of first appearance."""
 
@@ -832,41 +805,6 @@ def merge_transcript_turns(
         else:
             merged.append(turn)
     return merged
-
-
-_TOPIC_TRANSITION = re.compile(
-    r"(?:"
-    r"\b(?:а\s+)?(?:теперь|сейчас)\b[^.!?\n]{0,80}"
-    r"(?:\b(?:поговорим|обсудим|перейд[её]м)\b|"
-    r"\b(?:с\s+)?друг(?:ой|ую)\s+сторон(?:ы|у)\b)|"
-    r"\b(?:давай|давайте)\b[^.!?\n]{0,60}\b"
-    r"(?:поговорим|обсудим|перейд[её]м)\b|"
-    r"\bперейд[её]м\b[^.!?\n]{0,40}\bк\b|"
-    r"\bследующ(?:ая|ий|ее|ую)\s+(?:тема|вопрос|блок|часть)\b|"
-    r"\b(?:ещ[её]\s+один|другой)\s+вопрос\b|"
-    r"\bхочу\s+(?:теперь\s+)?(?:спросить|поговорить)\s+(?:о|об|про)\b|"
-    r"\bрасскажите\s+(?:теперь\s+)?(?:о|об|про)\b|"
-    r"\bчто\s+касается\b"
-    r")",
-    re.IGNORECASE,
-)
-
-
-def mark_topic_starts(
-    turns: Sequence[TranscriptTurn],
-) -> list[TranscriptTurn]:
-    """Places markers of explicit topic transitions regardless of speaker
-    role."""
-
-    result = [replace(turn, topic_start=False) for turn in turns]
-    for index, turn in enumerate(result):
-        if turn.start < 60 or not _TOPIC_TRANSITION.search(turn.text):
-            continue
-        minute = int(turn.start // 60)
-        if minute < 1:
-            continue
-        result[index] = replace(turn, topic_start=True)
-    return result
 
 
 def render_transcript(turns: Sequence[TranscriptTurn]) -> str:

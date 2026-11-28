@@ -63,7 +63,7 @@ encrypted, or not saved at all.
 
 ![The anonymization tab: a transcript with pseudonyms in place of names, the list of findings and the pseudonymization key](docs/screenshots/anonymization.jpg)
 
-Finished transcripts are exported as `.txt` or `.docx`.
+Finished transcripts are exported as `.txt`.
 
 ## Status
 
@@ -178,7 +178,7 @@ Some suites test things you might not expect to have tests:
 
 - **`test_ui_contract.py`** and the `test_anonymization_*`, `test_proof_*`
   and `test_speaker_*` suites assert exact JS snippets and labels in
-  `anonymizer.html`. Change a UI string or handler and the test must change
+  `app.html`. Change a UI string or handler and the test must change
   with it.
 - **`test_packaging.py`** checks four things:
   - every third-party import is pinned in `pyproject.toml`;
@@ -259,13 +259,13 @@ in installed builds, add a check there.
 ```
 ┌──────────────────────── app process (python -m alumenans) ───────────────────────┐
 │                                                                                  │
-│  pywebview window ── shows ──▶ resources/anonymizer.html  (the entire UI)        │
+│  pywebview window ── shows ──▶ resources/app.html  (the entire UI)        │
 │        │                              │                                          │
 │        │ window.pywebview.api         │ fetch() to 127.0.0.1                     │
 │        ▼                              ▼                                          │
 │     AppApi (stateful)           Handler on ThreadingHTTPServer (stateless)       │
-│     media, jobs, projects,      /analyze /proofread /inflect /known-words        │
-│     study, export               /guide-report /warmup /health, audio ranges      │
+│     media, jobs, projects,      /analyze /inflect /known-words                   │
+│     study, export               /warmup /health, audio ranges                    │
 │        │                              │                                          │
 │        │                              └─▶ anonymization: GLiNER, Natasha,        │
 │        │                                  pymorphy3, dictionary, heuristics      │
@@ -285,7 +285,7 @@ download, setup window); `server.py` holds the HTTP `Handler`; `api.py` holds
 `AppApi`.
 
 `main()` starts a `ThreadingHTTPServer` on 127.0.0.1 and a pywebview window
-that shows `resources/anonymizer.html`. That one HTML file holds the whole
+that shows `resources/app.html`. That one HTML file holds the whole
 UI: the transcription, proofreading and anonymization tabs. It reaches
 Python in two ways:
 
@@ -293,7 +293,7 @@ Python in two ways:
   serving audio with byte ranges.
 - **`AppApi`**, exposed as `window.pywebview.api`, for stateful operations:
   picking media, transcription jobs, project and study files, and saving
-  `.txt`, `.docx` and encrypted pseudonymization-key archives.
+  `.txt` and encrypted pseudonymization-key archives.
 
 **Launch sequence:**
 
@@ -347,10 +347,11 @@ of the word they replace, using Natasha morphology and pymorphy3.
 
 All of it uses SQLite and the standard library only.
 
-- **`project_store.py`**: one project file per interview. It lives in the
+- **`interview_store.py`**: one file per interview. It lives in the
   study folder, not next to the audio, so it survives deleting the
-  recording. Turn IDs come from the audio rather than the text, so
-  decisions stay attached when the text is edited.
+  recording. It holds the transcript as transcription returned it, the
+  transcript as it stands now, the interview's guide and notes, the
+  anonymized text and the encrypted key archive.
 - **`study_store.py`**: data shared across a series of interviews. That
   covers the guide, the study documents and the explicit "do not
   anonymize" list. The app may suggest entries for that list but must
@@ -368,7 +369,6 @@ All of it uses SQLite and the standard library only.
   aloud apart from prompts meant for the interviewer.
 - `align.py`: matches the transcript against the guide and skips branches
   that weren't taken.
-- `report.py`: reports how much of the guide the interview covered.
 - `speakers.py`: uses the guide to tell the interviewer from the
   respondent.
 
@@ -387,8 +387,8 @@ src/alumenans/            the package
   self_test.py            --self-test checks
   transcription/          worker process, its manager, model-free core logic
   storage/                SQLite project/study stores, exchange, encrypted zip
-  guide/                  interview-guide parsing, alignment, coverage, speakers
-  resources/              anonymizer.html (UI), names dictionary, icons
+  guide/                  interview-guide parsing, alignment, speakers
+  resources/              app.html (UI), names dictionary, icons
 tests/                    unittest suite
 tools/                    evaluate.py (metrics), startup_check.py (diagnostics)
 packaging/
@@ -415,7 +415,7 @@ packaging/
   - the screen: `tr("key", {params})` / `trn("key", n)` in JS, and
     `data-i18n="key"` (or `data-i18n-title`, `-placeholder`, `-aria-label`)
     in the markup, with the text in `const I18N` in `resources/i18n.js`,
-    which `anonymizer.html` loads before its own script.
+    which `app.html` loads before its own script.
 
   Add each new key to every language; `tests/test_i18n.py` checks that the
   keys and placeholders match. What goes into the user's documents follows
@@ -424,7 +424,7 @@ packaging/
   file stay Russian.
   The choice is stored in `.ui-language`, and child processes get it in
   `ALUMENANS_UI_LANGUAGE`.
-- **Imports are absolute:** `from alumenans.storage.project_store import …`.
+- **Imports are absolute:** `from alumenans.storage.interview_store import …`.
   Mock targets use the full dotted path, e.g.
   `patch("alumenans.launch.subprocess.run")`.
 - **Dependencies:**

@@ -29,8 +29,8 @@ from the two branches not taken is noise that devalues the whole report.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field
-from typing import Iterable, Sequence
+from dataclasses import dataclass
+from typing import Iterable
 
 from alumenans.i18n import t
 
@@ -98,14 +98,6 @@ class GuideSection:
     planned_from: float | None = None
     planned_to: float | None = None
 
-    @property
-    def planned_seconds(self) -> tuple[float, float] | None:
-        if self.planned_from is None:
-            return None
-        upper = self.planned_to if self.planned_to is not None else self.planned_from
-        return (self.planned_from * 60.0, upper * 60.0)
-
-
 @dataclass(frozen=True)
 class GuideBranch:
     key: str
@@ -121,10 +113,6 @@ class Guide:
     common: tuple[GuideItem, ...] = ()
     branches: tuple[GuideBranch, ...] = ()
     problems: tuple[str, ...] = ()
-
-    @property
-    def has_fork(self) -> bool:
-        return len(self.branches) > 1
 
     def items_for(self, branch_key: str = "") -> list[GuideItem]:
         """Everything that should be said if the interview took this branch."""

@@ -3,7 +3,7 @@
 """The interface language (Russian / English).
 
 Interface text lives in catalogs: `alumenans.locales.<code>` for Python,
-`const I18N` in anonymizer.html for the screen. Each language must have the
+`const I18N` in app.html for the screen. Each language must have the
 same keys with the same placeholders, and everything the code asks for must
 exist — otherwise a person sees a bare key or a half-translated window.
 
@@ -25,7 +25,7 @@ from alumenans.locales import en as python_en
 from alumenans.locales import ru as python_ru
 from alumenans.paths import PACKAGE_DIR, RESOURCES, child_environment
 
-SCREEN = (RESOURCES / "anonymizer.html").read_text(encoding="utf-8")
+SCREEN = (RESOURCES / "app.html").read_text(encoding="utf-8")
 I18N_SCRIPT = (RESOURCES / "i18n.js").read_text(encoding="utf-8")
 CATALOGS = screen_catalogs(I18N_SCRIPT)
 CYRILLIC = re.compile(r"[А-Яа-яЁё]")
@@ -148,19 +148,6 @@ class ScreenCatalogTests(unittest.TestCase):
         # What goes into the transcript is language data, not interface text.
         self.assertIn('stub:"Персона"', SCREEN)
         self.assertIn('return value || `Спикер ${number}`;', SCREEN)
-
-
-class PluralTests(unittest.TestCase):
-    def test_russian_forms(self):
-        expected = {1: "one", 2: "few", 4: "few", 5: "many", 11: "many", 12: "many",
-                    14: "many", 21: "one", 22: "few", 25: "many", 111: "many", 0: "many"}
-        for n, form in expected.items():
-            self.assertEqual(i18n.plural_form(n, "ru"), form, n)
-
-    def test_english_forms(self):
-        self.assertEqual(i18n.plural_form(1, "en"), "one")
-        for n in (0, 2, 5, 21):
-            self.assertEqual(i18n.plural_form(n, "en"), "many", n)
 
 
 class TranslationTests(LanguageState):

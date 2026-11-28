@@ -28,7 +28,7 @@ def catalog(language="ru"):
 
 FILES = PACKAGE_DIR
 
-SCREEN = (FILES / "resources" / "anonymizer.html").read_text(encoding="utf-8")
+SCREEN = (FILES / "resources" / "app.html").read_text(encoding="utf-8")
 
 
 def body(name):
@@ -71,12 +71,12 @@ class OccurrenceTests(unittest.TestCase):
     def test_a_switched_off_place_does_not_reach_the_key(self):
         """It stayed unchanged in the text; it has no place in the key.
 
-        Three places compute the key: the on-screen list, saving to a file
-        and carrying into proofreading. Plus the definition itself."""
+        Two places compute the key: the on-screen list and saving to a
+        file. Plus the definition itself."""
 
         uses = (SCREEN.count("replacedForms(g)")
                      - SCREEN.count("function replacedForms(g)"))
-        self.assertEqual(uses, 3)
+        self.assertEqual(uses, 2)
         # A group with all its boxes unticked doesn't get into the key at all.
         self.assertGreaterEqual(SCREEN.count("if (!forms.length) continue;"), 2)
         self.assertIn("if (!forms.length) continue;", SCREEN)
